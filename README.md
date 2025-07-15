@@ -280,25 +280,11 @@ export FLASK_ENV=development
 python api/index.py
 ```
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes with proper documentation
-4. Add tests for new functionality
-5. Commit changes: `git commit -m 'Add feature description'`
-6. Push to branch: `git push origin feature-name`
-7. Submit a pull request
-
 ### Development Guidelines
 - **Code Style**: Follow PEP 8 for Python, use meaningful variable names
 - **Documentation**: Update README and CLAUDE.md for significant changes
 - **Testing**: Add unit tests for new features
 - **Comments**: Document complex algorithms and business logic
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
@@ -308,30 +294,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **SweetAlert2**: Beautiful alert system
 - **Flask**: Lightweight and flexible Python web framework
 - **Vercel**: Seamless deployment platform
-
-## 📞 Support
-
-For support and questions:
-- **Issues**: Use GitHub Issues for bug reports
-- **Discussions**: Use GitHub Discussions for general questions
-- **Documentation**: Refer to CLAUDE.md for detailed technical information
-- **Email**: [your-email@example.com](mailto:your-email@example.com)
-
-## 🔄 Changelog
-
-### Version 2.0.0
-- Restructured for Vercel deployment
-- Added comprehensive template documentation
-- Implemented SweetAlert2 integration
-- Enhanced security with Flask-served downloads
-- Improved error handling and user feedback
-
-### Version 1.0.0
-- Initial release with GrapesJS newsletter editor
-- Basic image processing tools
-- HTML-to-PDF conversion
-- Cloudinary integration
-
----
-
-**Built with ❤️ for the developer community**
