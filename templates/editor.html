@@ -1,0 +1,407 @@
+<!--
+==============================================================================
+NEWSLETTER EDITOR PAGE - NYC Records Management System
+==============================================================================
+This template provides the GrapesJS visual editor interface for creating and editing
+newsletter templates. It includes a comprehensive drag-and-drop editor with
+newsletter-specific components and CKEditor integration for rich text editing.
+
+Features:
+- GrapesJS visual editor with newsletter preset
+- CKEditor integration for rich text editing
+- Save/Export functionality with SweetAlert2 feedback
+- Cloudinary integration for loading existing files
+- Custom editor header with file information
+- Responsive design for various screen sizes
+
+Template Variables:
+- file_id: Cloudinary public_id of the file being edited
+- cloud_name: Cloudinary cloud name for loading assets
+
+External Dependencies:
+- GrapesJS: Visual page builder framework
+- GrapesJS Newsletter Preset: Newsletter-specific components
+- CKEditor Plugin: Rich text editing integration
+- SweetAlert2: User feedback and alerts
+
+JavaScript APIs Used:
+- GrapesJS Editor API: For visual editing
+- Cloudinary REST API: For loading/saving files
+- Fetch API: For HTTP requests
+- Blob API: For file export functionality
+==============================================================================
+-->
+{% extends "base.html" %} 
+
+{% block title %}Newsletter Editor{% endblock %} 
+
+{% block extra_css %}
+<!-- ========================================================================
+     GRAPESJS AND EDITOR STYLESHEETS
+     ======================================================================== -->
+
+<!-- GrapesJS Core Styles: Main editor interface styling -->
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='stylesheets/grapes.min.css') }}"
+/>
+
+<!-- Material Design Styles: UI component styling -->
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='stylesheets/material.css') }}"
+/>
+
+<!-- Tooltip Styles: Hover tooltips for editor controls -->
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='stylesheets/tooltip.css') }}"
+/>
+
+<!-- Demo Styles: Additional styling for demo components -->
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='stylesheets/demos.css') }}"
+/>
+
+<!-- ========================================================================
+     CUSTOM EDITOR STYLES
+     ======================================================================== -->
+<style>
+  /* ===== NEWSLETTER LINK STYLING ===== */
+  .nl-link {
+    color: inherit;                     /* Inherit parent text color */
+  }
+
+  /* ===== GRAPESJS LOGO CUSTOMIZATION ===== */
+  .gjs-logo-version {
+    background-color: #5a606d;          /* Custom background for GrapesJS logo */
+  }
+  
+  /* ===== CKEDITOR TOOLBAR STYLING ===== */
+  .cke_toolbar.cke_toolbar {
+    min-height: 33px;                   /* Minimum height for CKEditor toolbar */
+  }
+
+  /* ===== EDITOR HEADER STYLES ===== */
+  .editor-header {
+    background-color: #2c3e50;          /* Dark blue-gray background */
+    color: white;                       /* White text */
+    padding: 15px 30px;                 /* Internal spacing */
+    display: flex;                      /* Flexbox layout */
+    align-items: center;                /* Vertical centering */
+    justify-content: space-between;     /* Space between elements */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);  /* Subtle drop shadow */
+  }
+
+  /* ===== BACK BUTTON STYLES ===== */
+  .back-link {
+    color: white;                       /* White text */
+    text-decoration: none;              /* Remove underline */
+    display: flex;                      /* Flexbox for icon + text */
+    align-items: center;                /* Vertical centering */
+    padding: 8px 16px;                  /* Internal padding */
+    background-color: rgba(255, 255, 255, 0.1);  /* Semi-transparent background */
+    border-radius: 6px;                 /* Rounded corners */
+    transition: all 0.2s ease;          /* Smooth hover transition */
+    font-size: 14px;                    /* Font size */
+    font-weight: 500;                   /* Medium font weight */
+    min-width: 80px;                    /* Minimum button width */
+  }
+
+  .back-link:hover {
+    background-color: rgba(255, 255, 255, 0.2);  /* Lighter on hover */
+    color: white;                       /* Maintain white text */
+    text-decoration: none;              /* No underline on hover */
+    transform: translateY(-1px);        /* Slight lift effect */
+  }
+
+  .back-link i {
+    margin-right: 6px;                  /* Space between icon and text */
+    font-size: 16px;                    /* Icon size */
+  }
+
+  /* ===== FILENAME DISPLAY STYLES ===== */
+  .filename-display {
+    flex-grow: 1;                       /* Take available horizontal space */
+    text-align: center;                 /* Center-align text */
+    font-weight: 600;                   /* Semi-bold weight */
+    font-size: 18px;                    /* Larger font size */
+    margin: 0 40px;                     /* Horizontal margins */
+    color: #ecf0f1;                     /* Light gray text color */
+  }
+
+  /* ===== HEADER SPACER FOR LAYOUT BALANCE ===== */
+  .header-spacer {
+    min-width: 80px;                    /* Match back button width for balance */
+  }
+</style>
+{% endblock %} 
+
+{% block content %}
+<!-- ========================================================================
+     EDITOR HEADER SECTION
+     ======================================================================== -->
+<!-- Custom header bar showing file name and navigation controls -->
+<div class="editor-header">
+  <!-- Back button: Returns to newsletter upload page -->
+  <a href="{{ url_for('newsletter.upload') }}" class="back-link">
+    <i class="bi bi-arrow-left"></i>
+    Back
+  </a>
+  
+  <!-- File name display: Shows current file being edited (extracted from public_id) -->
+  <div class="filename-display">
+    {{ file_id.split('/')[-1] if file_id else 'Untitled' }}
+  </div>
+  
+  <!-- Spacer: Provides visual balance for centered file name -->
+  <div class="header-spacer"></div>
+</div>
+
+<!-- ========================================================================
+     GRAPESJS EDITOR CONTAINER
+     ======================================================================== -->
+<!-- Main editor container: GrapesJS will replace this div with the full editor interface -->
+<!-- Height starts at 0 to prevent flash of unstyled content before editor loads -->
+<div id="gjs" style="height: 0px; overflow: hidden"></div>
+{% endblock %} {% block extra_js %}
+<!-- ========================================================================
+     GRAPESJS JAVASCRIPT DEPENDENCIES
+     ======================================================================== -->
+
+<!-- GrapesJS Core Library: Main visual page builder framework -->
+<script src="{{ url_for('static', filename='js/grapes.min.js') }}"></script>
+
+<!-- CKEditor Plugin: Rich text editing integration for GrapesJS text components -->
+<script src="{{ url_for('static', filename='js/grapesjs-plugin-ckeditor/index.js') }}"></script>
+
+<!-- Newsletter Preset: Pre-configured components and styles for email templates -->
+<script src="https://unpkg.com/grapesjs-preset-newsletter@1.0.1"></script>
+
+<!-- ========================================================================
+     GRAPESJS EDITOR INITIALIZATION AND CONFIGURATION
+     ======================================================================== -->
+<script type="text/javascript">
+  // Initialize GrapesJS editor with comprehensive configuration
+  var editor = grapesjs.init({
+    // ===== CORE EDITOR SETTINGS =====
+    selectorManager: { componentFirst: true },    // Prioritize component selection over CSS selectors
+    clearOnRender: true,                          // Clear canvas on each render for clean state
+    height: "100%",                               // Use full container height
+    container: "#gjs",                            // Target container element
+    fromElement: true,                            // Initialize from existing DOM element
+    
+    // ===== LOCAL STORAGE CONFIGURATION =====
+    storageManager: {
+      options: {
+        local: { key: "gjsProjectNl" },           // Local storage key for auto-save
+      },
+    },
+    
+    // ===== PLUGIN CONFIGURATION =====
+    plugins: ["grapesjs-preset-newsletter", "grapesjs-plugin-ckeditor"],
+    
+    // ===== PLUGIN-SPECIFIC OPTIONS =====
+    pluginsOpts: {
+      // --- Newsletter Preset Configuration ---
+      "grapesjs-preset-newsletter": {
+        modalLabelImport: "Paste all your code here below and click import",
+        modalLabelExport: "Copy the code and use it wherever you want",
+        codeViewerTheme: "material",              // Material theme for code viewer
+        importPlaceholder:                        // Default content for new newsletters
+          '<table class="table"><tr><td class="cell">Hello world!</td></tr></table>',
+        cellStyle: {                              // Default styling for table cells
+          "font-size": "12px",
+          "font-weight": 300,
+          "vertical-align": "top",
+          color: "rgb(111, 119, 125)",
+          margin: 0,
+          padding: 0,
+        },
+      },
+      
+      // --- CKEditor Rich Text Plugin Configuration ---
+      "grapesjs-plugin-ckeditor": {
+        onToolbar: (el) => {
+          el.style.minWidth = "350px";            // Ensure toolbar has minimum width
+        },
+        options: {
+          startupFocus: true,                     // Auto-focus editor on load
+          extraAllowedContent: "*(*);*{*}",       // Allow all classes and inline styles
+          allowedContent: true,                   // Disable auto-formatting and class removal
+          enterMode: 2,                           // Use <br> tags instead of <p> for line breaks
+          extraPlugins: "sharedspace,justify,colorbutton,panelbutton,font",  // Additional CKEditor plugins
+          versionCheck: false,                    // Disable version checking
+          
+          // --- CKEditor Toolbar Configuration ---
+          toolbar: [
+            { name: "styles", items: ["Font", "FontSize"] },                    // Font family and size
+            ["Bold", "Italic", "Underline", "Strike"],                         // Text formatting
+            { name: "paragraph", items: ["NumberedList", "BulletedList"] },    // Lists
+            { name: "links", items: ["Link", "Unlink"] },                      // Hyperlinks
+            { name: "colors", items: ["TextColor", "BGColor"] },               // Text and background colors
+          ],
+        },
+      },
+    },
+  });
+
+  // ===== EDITOR API REFERENCES =====
+  var pnm = editor.Panels;        // Panel manager for adding custom toolbar buttons
+  var cmdm = editor.Commands;     // Command manager for defining custom actions
+
+  // ========================================================================
+  // SAVE PROJECT COMMAND - Save current editor content to server
+  // ========================================================================
+  cmdm.add("save-project", {
+    run: function (editor, sender) {
+      sender.set("active", 0);                    // Deactivate button after click
+      
+      // --- Extract Content from Editor ---
+      const html = editor.getHtml();              // Get HTML content from canvas
+      const css = editor.getCss();                // Get CSS styles from editor
+      
+      // --- Construct Complete HTML Document ---
+      const fullHtml = `<!doctype html><html><head><style>${css}</style></head><body>${html}</body></html>`;
+      
+      // --- Send Save Request to Server ---
+      const fileId = "{{ file_id }}";             // File identifier from template variable
+      fetch(`/save/${fileId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/html",            // Send as HTML content
+        },
+        body: fullHtml,                           // Complete HTML document
+      }).then((response) => {
+        // --- Handle Successful Save ---
+        if (response.ok) {
+          Swal.fire({
+            icon: 'success',
+            title: 'Success!',
+            text: 'Project saved successfully!',
+            timer: 2000,                          // Auto-close after 2 seconds
+            showConfirmButton: false
+          });
+        } else {
+          // --- Handle Server Error ---
+          Swal.fire({
+            icon: 'error',
+            title: 'Error!',
+            text: 'An error occurred while saving the project.',
+            confirmButtonColor: '#d33'            // Red confirm button
+          });
+        }
+      }).catch((error) => {
+        // --- Handle Network Error ---
+        Swal.fire({
+          icon: 'error',
+          title: 'Network Error!',
+          text: 'Failed to save project. Please check your connection.',
+          confirmButtonColor: '#d33'              // Red confirm button
+        });
+      });
+    },
+  });
+  // ========================================================================
+  // ADD SAVE BUTTON TO TOOLBAR - Custom save button in GrapesJS toolbar
+  // ========================================================================
+  pnm.addButton("options", [
+    {
+      id: "save-db",                              // Unique button identifier
+      label: `<svg style="display: block; max-width: 22px" viewBox="0 0 24 24">
+            <path fill="currentColor" d="M17,3H5C3.89,3 3,3.89 3,5V19C3,20.11 3.9,21 5,21H19C20.11,21 21,20.11 21,19V7L17,3M19,19H5V5H16.17L19,7.83V19M12,12C10.34,12 9,13.34 9,15C9,16.66 10.34,18 12,18C13.66,18 15,16.66 15,15C15,13.34 13.66,12 12,12M6,6H15V10H6V6Z" />
+        </svg>`,                                  // Save icon SVG
+      command: "save-project",                    // Links to save command defined above
+      attributes: {
+        title: "Save Project",                   // Tooltip text
+        "data-tooltip-pos": "bottom",            // Tooltip position
+      },
+    },
+  ]);
+
+  // ========================================================================
+  // EXPORT HTML COMMAND - Download current editor content as HTML file
+  // ========================================================================
+  cmdm.add("export-html", {
+    run: function (editor, sender) {
+      sender.set("active", 0);                    // Deactivate button after click
+      
+      // --- Extract Content from Editor ---
+      const html = editor.getHtml();              // Get HTML content from canvas
+      const css = editor.getCss();                // Get CSS styles from editor
+      
+      // --- Construct Complete HTML Document ---
+      const fullHtml = `<!doctype html><html><head><style>${css}</style></head><body>${html}</body></html>`;
+      
+      // --- Prepare File Download ---
+      const fileId = "{{ file_id }}";             // File identifier from template
+      const fileName = fileId.split("/").pop();   // Extract filename from path
+      
+      // --- Create and Trigger Download ---
+      const blob = new Blob([fullHtml], { type: "text/html" });  // Create HTML blob
+      const url = URL.createObjectURL(blob);      // Create temporary download URL
+      const a = document.createElement("a");      // Create invisible download link
+      a.href = url;                               // Set download URL
+      a.download = fileName;                      // Set download filename
+      a.click();                                  // Trigger download
+      
+      // --- Show Success Feedback ---
+      Swal.fire({
+        icon: 'success',
+        title: 'Exported!',
+        text: 'HTML file exported successfully!',
+        timer: 2000,                              // Auto-close after 2 seconds
+        showConfirmButton: false
+      });
+    },
+  });
+  // ========================================================================
+  // ADD EXPORT BUTTON TO TOOLBAR - Custom export button in GrapesJS toolbar
+  // ========================================================================
+  pnm.addButton("options", [
+    {
+      id: "export-file",                          // Unique button identifier
+      label: `<svg style="display: block; max-width: 22px" viewBox="0 0 24 24">
+            <path fill="currentColor" d="M14,2H6C4.9,2 4,2.9 4,4V20C4,21.1 4.9,22 6,22H18C19.1,22 20,21.1 20,20V8L14,2M18,20H6V4H13V9H18V20M12,19L8,15H11V12H13V15H16L12,19Z" />
+        </svg>`,                                  // Export/download icon SVG
+      command: "export-html",                     // Links to export command defined above
+      attributes: {
+        title: "Export HTML",                    // Tooltip text
+        "data-tooltip-pos": "bottom",            // Tooltip position
+      },
+    },
+  ]);
+
+  // ========================================================================
+  // EDITOR READY EVENT - Load existing content when editor initializes
+  // ========================================================================
+  editor.onReady(function () {
+    // --- Load Existing Newsletter Content from Cloudinary ---
+    const fileId = "{{ file_id }}";              // Get file identifier from template
+    if (fileId) {
+      // --- Fetch Content from Cloudinary CDN ---
+      fetch(
+        `https://res.cloudinary.com/{{ cloud_name }}/raw/upload/${fileId}?_=${new Date().getTime()}`
+      )
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error('Failed to load newsletter content');
+          }
+          return response.text();               // Parse response as text/HTML
+        })
+        .then((data) => editor.setComponents(data))  // Load content into editor
+        .catch((error) => {
+          // --- Handle Content Loading Errors ---
+          console.error('Error loading content:', error);
+          Swal.fire({
+            icon: 'warning',
+            title: 'Content Load Warning',
+            text: 'Could not load existing content. Starting with empty template.',
+            confirmButtonColor: '#10b981'       // Green confirm button
+          });
+        });
+    }
+  });
+</script>
+{% endblock %}

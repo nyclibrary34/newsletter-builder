@@ -1,0 +1,475 @@
+<!--
+==============================================================================
+TOOL PREVIEW PAGE - NYC Records Management System
+==============================================================================
+This template provides a universal file processing interface for various tools
+including HTML to PDF conversion, HTML compression, and image compression.
+It features drag-and-drop upload, file validation, and progress feedback.
+
+Features:
+- Universal tool interface with tool-specific styling
+- Drag-and-drop file upload with visual feedback
+- File type validation based on tool requirements
+- Progress indicators and loading overlays
+- SweetAlert2 integration for user feedback
+- Dynamic UI adjustments per tool type
+
+Tool Types Supported:
+- Html To Pdf: Convert HTML files to single-page PDF documents
+- Html Compression: Compress HTML files by removing whitespace
+- Jpg Compression: Compress JPG images with quality settings
+
+Template Variables:
+- tool_title: Display name of the current tool
+- Dynamic styling and behavior based on tool_title value
+
+Route Dependencies:
+- /convert/html-to-pdf: HTML to PDF conversion endpoint
+- /compress/html: HTML compression endpoint  
+==============================================================================
+-->
+{% extends "base.html" %} {% block title %}{{ tool_title }} - NYC Records{%
+endblock %} {% block extra_css %}
+<!-- ========================================================================
+     TOOL-SPECIFIC CSS STYLES
+     ======================================================================== -->
+<style>
+  /* ===== MAIN CONTAINER STYLES ===== */
+  .preview-container {
+    max-width: 960px; /* Maximum content width */
+    margin: 2rem auto; /* Center container with top/bottom margin */
+    padding: 0 1rem; /* Horizontal padding for mobile */
+  }
+
+  /* ===== UPLOAD BOX DEFAULT STYLES ===== */
+  .upload-box {
+    background-color: #fff; /* White background */
+    border: 3px dashed #e9ecef; /* Dashed gray border */
+    border-radius: 1rem; /* Rounded corners */
+    padding: 5rem 2rem; /* Large internal padding */
+    text-align: center; /* Center-align content */
+    transition: all 0.3s ease; /* Smooth hover transitions */
+    cursor: pointer; /* Indicate clickable area */
+  }
+
+  /* ===== DRAG-OVER STATE STYLES ===== */
+  .upload-box.dragover {
+    border-color: #10b981; /* Green border when dragging files */
+    background-color: #e9f9f3; /* Light green background */
+  }
+
+  /* ===== UPLOAD ICON STYLES ===== */
+  .upload-icon {
+    font-size: 4rem; /* Large icon size */
+    color: #10b981; /* Default green color */
+  }
+
+  /* ===== PRIMARY BUTTON OVERRIDES ===== */
+  .btn-primary {
+    background-color: #10b981; /* Green background */
+    border-color: #10b981; /* Green border */
+  }
+
+  .btn-primary:hover {
+    background-color: #059669; /* Darker green on hover */
+    border-color: #059669; /* Darker green border */
+  }
+
+  /* ===== HTML TO PDF SPECIFIC STYLES ===== */
+  /* Purple color scheme for HTML to PDF tool */
+  .html-to-pdf .upload-box {
+    border-color: #6f42c1; /* Purple border */
+  }
+
+  .html-to-pdf .upload-box.dragover {
+    border-color: #6f42c1; /* Purple border on drag */
+    background-color: #f8f6ff; /* Light purple background */
+  }
+
+  .html-to-pdf .upload-icon {
+    color: #6f42c1; /* Purple icon color */
+  }
+
+  .html-to-pdf .btn-primary {
+    background-color: #6f42c1; /* Purple button background */
+    border-color: #6f42c1; /* Purple button border */
+  }
+
+  .html-to-pdf .btn-primary:hover {
+    background-color: #5a359c; /* Darker purple on hover */
+    border-color: #5a359c; /* Darker purple border */
+  }
+</style>
+{% endblock %} {% block content %}
+<!-- ========================================================================
+     MAIN TOOL INTERFACE CONTAINER
+     ======================================================================== -->
+<!-- Container with conditional CSS class for tool-specific styling -->
+<div
+  class="preview-container {% if tool_title == 'Html To Pdf' %}html-to-pdf{% endif %}"
+>
+  <!-- ===== PAGE HEADER SECTION ===== -->
+  <!-- Tool title and description based on current tool type -->
+  <header class="text-center mb-5">
+    <h2 class="h1 fw-bold text-dark">{{ tool_title }}</h2>
+    <p class="text-secondary mt-2 fs-4">
+      {% if tool_title == 'Html To Pdf' %} Convert your HTML files to
+      single-page PDF documents - no pagination breaks! {% elif tool_title ==
+      'Html Compression' %} Compress your HTML files by removing comments and
+      whitespace {% elif tool_title == 'Jpg Compression' %} Compress your JPG
+      images with adjustable quality settings {% else %} Easily convert your
+      files with our powerful tool. {% endif %}
+    </p>
+  </header>
+
+  <!-- ===== JPG COMPRESSION SETTINGS ===== -->
+  <!-- Quality slider control (only shown for JPG compression tool) -->
+  {% if tool_title == 'Jpg Compression' %}
+  <div class="row mb-4">
+    <div class="col-md-6 mx-auto">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Compression Settings</h5>
+          <div class="mb-3">
+            <!-- Quality slider with real-time value display -->
+            <label for="quality-slider" class="form-label"
+              >Quality: <span id="quality-value">85</span>%</label
+            >
+            <input
+              type="range"
+              class="form-range"
+              id="quality-slider"
+              min="1"
+              max="100"
+              value="85"
+            />
+            <small class="form-text text-muted"
+              >Lower quality = smaller file size</small
+            >
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ===== FILE UPLOAD INTERFACE ===== -->
+  <!-- Main upload area with drag-and-drop support -->
+  <div id="upload-box" class="upload-box position-relative">
+    <!-- --- Loading Overlay --- -->
+    <!-- Shown during file processing to indicate progress -->
+    <div
+      id="loading-overlay"
+      class="position-absolute top-0 start-0 w-100 h-100 bg-white d-flex justify-content-center align-items-center flex-column d-none"
+      style="border-radius: 1rem; z-index: 10"
+    >
+      <div
+        class="spinner-border text-primary"
+        role="status"
+        style="width: 3rem; height: 3rem"
+      >
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-3 fs-5">Converting file, please wait...</p>
+    </div>
+
+    <!-- --- Hidden File Input --- -->
+    <!-- File input with tool-specific accept attributes -->
+    <input type="file" id="file-input" class="d-none" {% if tool_title == 'Html
+    To Pdf' %}accept=".html"{% elif tool_title == 'Html Compression'
+    %}accept=".html"{% elif tool_title == 'Jpg Compression'
+    %}accept=".jpg,.jpeg"{% endif %} multiple>
+
+    <!-- --- Upload Icon --- -->
+    <!-- Tool-specific icon based on file type -->
+    <i
+      class="bi {% if tool_title == 'Html To Pdf' %}bi-file-earmark-code{% elif tool_title == 'Html Compression' %}bi-file-earmark-zip{% elif tool_title == 'Jpg Compression' %}bi-image{% else %}bi-cloud-arrow-up{% endif %} upload-icon mb-4"
+    ></i>
+
+    <!-- --- Upload Instructions --- -->
+    <!-- Dynamic text based on tool requirements -->
+    <h3 class="fw-semibold text-dark mb-2">
+      {% if tool_title == 'Html To Pdf' %} Drag & drop HTML files here {% elif
+      tool_title == 'Html Compression' %} Drag & drop HTML files here {% elif
+      tool_title == 'Jpg Compression' %} Drag & drop JPG files here {% else %}
+      Drag & drop files here {% endif %}
+    </h3>
+    <p class="text-secondary mb-4 fs-5">or</p>
+
+    <!-- --- File Selection Button --- -->
+    <button
+      type="button"
+      id="select-file-btn"
+      class="btn btn-primary btn-lg px-5"
+    >
+      Select Files
+    </button>
+
+    <!-- --- File List Container --- -->
+    <!-- Dynamically populated with selected files and action buttons -->
+    <div id="file-list" class="mt-4 text-start"></div>
+  </div>
+</div>
+{% endblock %} {% block extra_js %}
+<!-- ========================================================================
+     TOOL PREVIEW JAVASCRIPT - File upload and processing functionality
+     ======================================================================== -->
+<script>
+  // ===== DOM ELEMENT REFERENCES =====
+  const uploadBox = document.getElementById("upload-box"); // Main upload area
+  const fileInput = document.getElementById("file-input"); // Hidden file input
+  const selectFileBtn = document.getElementById("select-file-btn"); // File selection button
+  const fileList = document.getElementById("file-list"); // Container for file list
+  const loadingOverlay = document.getElementById("loading-overlay"); // Loading indicator
+
+  // ===== TOOL TYPE DETECTION =====
+  const toolTitle = "{{ tool_title }}"; // Current tool name from template
+  const isHtmlToPdf = toolTitle === "Html To Pdf"; // PDF conversion tool flag
+  const isHtmlCompression = toolTitle === "Html Compression"; // HTML compression tool flag
+  const isJpgCompression = toolTitle === "Jpg Compression"; // JPG compression tool flag
+
+  // ========================================================================
+  // JPG COMPRESSION QUALITY SLIDER SETUP
+  // ========================================================================
+  if (isJpgCompression) {
+    const qualitySlider = document.getElementById("quality-slider");
+    const qualityValue = document.getElementById("quality-value");
+
+    // --- Update Quality Display in Real-time ---
+    qualitySlider.addEventListener("input", function () {
+      qualityValue.textContent = this.value; // Update percentage display
+    });
+  }
+
+  // ========================================================================
+  // FILE SELECTION EVENT HANDLERS
+  // ========================================================================
+
+  // --- File Selection Button Click ---
+  selectFileBtn.addEventListener("click", (e) => {
+    e.stopPropagation(); // Prevent event bubbling
+    fileInput.click(); // Trigger file dialog
+  });
+
+  // --- Upload Box Click ---
+  uploadBox.addEventListener("click", () => {
+    fileInput.click(); // Trigger file dialog on area click
+  });
+
+  // ========================================================================
+  // DRAG AND DROP EVENT HANDLERS
+  // ========================================================================
+
+  // --- Drag Over Event ---
+  uploadBox.addEventListener("dragover", (e) => {
+    e.preventDefault(); // Allow drop
+    e.stopPropagation(); // Prevent event bubbling
+    uploadBox.classList.add("dragover"); // Add visual feedback
+  });
+
+  // --- Drag Leave Event ---
+  uploadBox.addEventListener("dragleave", (e) => {
+    e.preventDefault(); // Prevent default behavior
+    e.stopPropagation(); // Prevent event bubbling
+    uploadBox.classList.remove("dragover"); // Remove visual feedback
+  });
+
+  // --- File Drop Event ---
+  uploadBox.addEventListener("drop", (e) => {
+    e.preventDefault(); // Prevent default behavior
+    e.stopPropagation(); // Prevent event bubbling
+    uploadBox.classList.remove("dragover"); // Remove visual feedback
+    const files = e.dataTransfer.files; // Get dropped files
+    fileInput.files = files; // Update input element
+    handleFiles(files); // Process the files
+  });
+
+  // --- File Input Change Event ---
+  fileInput.addEventListener("change", () => {
+    const files = fileInput.files; // Get selected files
+    handleFiles(files); // Process the files
+  });
+
+  // ========================================================================
+  // FILE HANDLING AND VALIDATION FUNCTION
+  // ========================================================================
+  function handleFiles(files) {
+    fileList.innerHTML = ""; // Clear existing file list
+
+    if (files.length > 0) {
+      // --- Create File List Container ---
+      const list = document.createElement("ul");
+      list.className = "list-group"; // Bootstrap list styling
+
+      // --- Process Each Selected File ---
+      for (const file of files) {
+        // --- File Type Validation Based on Tool ---
+        if (isHtmlToPdf && !file.name.toLowerCase().endsWith(".html")) {
+          Swal.fire({
+            icon: "warning",
+            title: "Invalid File Type",
+            text: "Please select only HTML files for conversion.",
+            confirmButtonColor: "#10b981",
+          });
+          continue; // Skip invalid files
+        } else if (
+          isHtmlCompression &&
+          !file.name.toLowerCase().endsWith(".html")
+        ) {
+          Swal.fire({
+            icon: "warning",
+            title: "Invalid File Type",
+            text: "Please select only HTML files for compression.",
+            confirmButtonColor: "#10b981",
+          });
+          continue; // Skip invalid files
+        } else if (
+          isJpgCompression &&
+          !file.name.toLowerCase().match(/\.(jpg|jpeg)$/)
+        ) {
+          Swal.fire({
+            icon: "warning",
+            title: "Invalid File Type",
+            text: "Please select only JPG/JPEG files for compression.",
+            confirmButtonColor: "#10b981",
+          });
+          continue; // Skip invalid files
+        }
+
+        // --- Create File List Item ---
+        const listItem = document.createElement("li");
+        listItem.className =
+          "list-group-item d-flex justify-content-between align-items-center";
+        listItem.textContent = `${file.name} (${(file.size / 1024).toFixed(
+          2
+        )} KB)`; // Show file name and size
+
+        // --- Create Action Button ---
+        const convertBtn = document.createElement("button");
+        convertBtn.className = "btn btn-sm btn-success";
+        convertBtn.textContent = isHtmlToPdf ? "Convert" : "Compress"; // Dynamic button text
+        convertBtn.onclick = (e) => {
+          e.stopPropagation(); // Prevent event bubbling
+          convertFile(file, listItem); // Process the file
+        };
+
+        // --- Add Button to List Item ---
+        listItem.appendChild(convertBtn);
+        list.appendChild(listItem);
+      }
+
+      // --- Add List to Container ---
+      fileList.appendChild(list);
+    }
+  }
+
+  // ========================================================================
+  // FILE CONVERSION/COMPRESSION FUNCTION
+  // ========================================================================
+  function convertFile(file, listItem) {
+    // --- Prepare Form Data ---
+    const formData = new FormData();
+    formData.append("file", file); // Add file to form data
+
+    // --- Update Button to Show Progress ---
+    const convertBtn = listItem.querySelector("button");
+    convertBtn.disabled = true; // Disable button during processing
+    const actionText = isHtmlToPdf ? "Converting..." : "Compressing...";
+    convertBtn.innerHTML = `
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        ${actionText}
+    `;
+
+    // --- Show Loading Overlay ---
+    loadingOverlay.classList.remove("d-none"); // Display processing indicator
+
+    // ===== DETERMINE ENDPOINT AND FILENAME BASED ON TOOL TYPE =====
+    let endpoint, downloadName;
+    if (isHtmlToPdf) {
+      endpoint = "/tools/convert/html-to-pdf"; // PDF conversion endpoint
+      downloadName = file.name.replace(".html", ".pdf"); // Change extension to PDF
+    } else if (isHtmlCompression) {
+      endpoint = "/tools/compress/html"; // HTML compression endpoint
+      downloadName = `compressed_${file.name}`; // Add prefix to filename
+    } else if (isJpgCompression) {
+      endpoint = "/tools/compress/jpg"; // JPG compression endpoint
+      downloadName = `compressed_${file.name}`; // Add prefix to filename
+
+      // --- Add Quality Parameter for JPG Compression ---
+      const qualitySlider = document.getElementById("quality-slider");
+      if (qualitySlider) {
+        formData.append("quality", qualitySlider.value); // Include quality setting
+      }
+    }
+
+    // ===== SEND FILE TO SERVER FOR PROCESSING =====
+    fetch(endpoint, {
+      method: "POST",
+      body: formData, // Send file and parameters
+    })
+      .then((response) => {
+        // --- Handle Server Response ---
+        if (!response.ok) {
+          // Check if response is JSON or HTML
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            return response.json().then((err) => {
+              throw new Error(err.error);
+            });
+          } else {
+            throw new Error(
+              `Server error: ${response.status} ${response.statusText}`
+            );
+          }
+        }
+        return response.blob(); // Get processed file as blob
+      })
+      .then((blob) => {
+        // --- Download Processed File ---
+        const url = window.URL.createObjectURL(blob); // Create download URL
+        const a = document.createElement("a"); // Create download link
+        a.style.display = "none"; // Hide link element
+        a.href = url; // Set download URL
+        a.download = downloadName; // Set download filename
+        document.body.appendChild(a); // Add to DOM
+        a.click(); // Trigger download
+        window.URL.revokeObjectURL(url); // Clean up URL object
+        document.body.removeChild(a); // Remove from DOM
+
+        // --- Remove File from List ---
+        listItem.remove(); // Remove processed file from UI
+
+        // --- Show Success Message ---
+        Swal.fire({
+          icon: "success",
+          title: "Success!",
+          text: `File ${
+            isHtmlToPdf ? "converted" : "compressed"
+          } and downloaded successfully!`,
+          timer: 2000, // Auto-close after 2 seconds
+          showConfirmButton: false,
+        });
+      })
+      .catch((error) => {
+        // --- Handle Processing Errors ---
+        console.error("Error:", error);
+        Swal.fire({
+          icon: "error",
+          title: "Conversion Failed",
+          text: `An error occurred: ${error.message}`,
+          confirmButtonColor: "#d33", // Red confirm button
+        });
+
+        // --- Reset Button State ---
+        convertBtn.disabled = false; // Re-enable button
+        convertBtn.innerHTML = isHtmlToPdf ? "Convert" : "Compress"; // Reset button text
+      })
+      .finally(() => {
+        // --- Hide Loading Overlay if No More Files ---
+        if (fileList.getElementsByTagName("li").length === 0) {
+          loadingOverlay.classList.add("d-none"); // Hide overlay when all files processed
+        }
+      });
+  }
+</script>
+{% endblock %}

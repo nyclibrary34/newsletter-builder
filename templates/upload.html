@@ -1,0 +1,202 @@
+<!--
+==============================================================================
+NEWSLETTER UPLOAD PAGE - NYC Records Management System
+==============================================================================
+This template provides the main interface for uploading and managing newsletter files.
+Users can upload new files and view/manage existing files with edit, download, and delete actions.
+
+Features:
+- File upload form with drag-and-drop support (via browser default)
+- Responsive card grid displaying uploaded files
+- File actions: Edit (GrapesJS editor), Download, Delete
+- Formatted upload dates using custom Jinja2 filter
+- Integration with Cloudinary for file storage
+
+Template Variables:
+- files: List of file objects from Cloudinary API containing:
+  - public_id: Unique file identifier
+  - created_at: Upload timestamp (formatted with format_datetime filter)
+  - Other Cloudinary metadata
+
+Route Dependencies:
+- newsletter.upload_file: POST endpoint for file uploads
+- newsletter.edit_file: Link to GrapesJS editor
+- newsletter.download_file: File download endpoint
+- newsletter.delete_file: File deletion endpoint
+==============================================================================
+-->
+{% extends "base.html" %} 
+
+{% block title %}Newsletter Upload{% endblock %} 
+
+{% block extra_css %}
+<!-- ========================================================================
+     PAGE-SPECIFIC CSS STYLES
+     ======================================================================== -->
+<style>
+  /* ===== FILE CARD CONTAINER STYLES ===== */
+  .tool-card-link {
+    text-decoration: none;              /* Remove link underlines */
+    color: inherit;                     /* Inherit text color from parent */
+  }
+  
+  /* ===== INDIVIDUAL FILE CARD STYLES ===== */
+  .tool-card {
+    background-color: #f8f9fa;          /* Light gray background */
+    border: 1px solid #e9ecef;          /* Subtle border */
+    border-radius: 0.75rem;             /* Rounded corners */
+    transition: all 0.3s ease;          /* Smooth hover animations */
+    display: flex;                      /* Flexbox layout */
+    flex-direction: column;             /* Vertical stacking */
+    height: 100%;                       /* Full height of grid cell */
+  }
+  
+  /* ===== CARD HOVER EFFECTS ===== */
+  .tool-card-link:hover .tool-card {
+    transform: translateY(-3px);        /* Lift effect on hover */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);  /* Enhanced shadow */
+    border-color: #10b981;              /* Green border on hover */
+  }
+  
+  /* ===== CARD BODY LAYOUT ===== */
+  .tool-card .card-body {
+    padding: 1.5rem;                    /* Internal spacing */
+    display: flex;                      /* Flexbox for content layout */
+    flex-direction: column;             /* Vertical stacking */
+    flex-grow: 1;                       /* Take available space */
+  }
+  
+  /* ===== CARD TEXT STYLES ===== */
+  .tool-card .card-title {
+    font-size: 1.1rem;                  /* Slightly larger title */
+    font-weight: 600;                   /* Semi-bold weight */
+  }
+  
+  .tool-card .card-text {
+    font-size: 0.95rem;                 /* Slightly smaller body text */
+    color: #6c757d;                     /* Muted gray color */
+    flex-grow: 1;                       /* Take available vertical space */
+  }
+  
+  /* ===== FILE ICON CONTAINER ===== */
+  .tool-card .icon-container {
+    flex-shrink: 0;                     /* Don't shrink with content */
+    width: 48px;                        /* Fixed width */
+    height: 48px;                       /* Fixed height (square) */
+    display: flex;                      /* Flexbox for centering */
+    align-items: center;                /* Vertical centering */
+    justify-content: center;            /* Horizontal centering */
+    border-radius: 0.75rem;             /* Rounded corners */
+    margin-right: 1.25rem;              /* Space between icon and content */
+  }
+  
+  /* ===== CUSTOM COLOR CLASSES ===== */
+  .bg-purple-subtle {
+    background-color: #f3e8ff;          /* Light purple background */
+  }
+  
+  .text-purple {
+    color: #7c3aed;                     /* Purple text color */
+  }
+</style>
+{% endblock %} 
+
+{% block content %}
+<!-- ========================================================================
+     PAGE HEADER SECTION
+     ======================================================================== -->
+<!-- Page title and description for the newsletter upload interface -->
+<header class="mb-4">
+  <h2 class="h2 fw-semibold text-dark">Newsletter Upload</h2>
+  <p class="text-secondary mt-1 small">Welcome to the Newsletter Builder.</p>
+</header>
+
+<!-- ========================================================================
+     FILE UPLOAD SECTION
+     ======================================================================== -->
+<!-- Form for uploading new newsletter files to Cloudinary storage -->
+<section class="mb-5">
+  <h3 class="h5 fw-medium text-secondary mb-3">Upload Newsletter</h3>
+  <form
+    method="post"                              
+    enctype="multipart/form-data"              
+    action="{{ url_for('newsletter.upload_file') }}"
+  >
+    <div class="input-group mb-3">
+      <!-- File input field with Bootstrap styling -->
+      <input type="file" class="form-control" name="file" id="file" />
+      <!-- Submit button to trigger upload -->
+      <button class="btn btn-primary" type="submit">Upload</button>
+    </div>
+  </form>
+</section>
+
+<!-- ========================================================================
+     UPLOADED FILES GRID SECTION
+     ======================================================================== -->
+<!-- Responsive grid displaying all uploaded newsletter files -->
+<section>
+  <h3 class="h5 fw-medium text-secondary mb-3">Uploaded Files</h3>
+  
+  <!-- Bootstrap responsive grid with gap spacing -->
+  <div class="row g-4">
+    
+    <!-- ===== FILE CARD LOOP ===== -->
+    <!-- Iterate through each file returned from Cloudinary API -->
+    {% for file in files %}
+    <div class="col-md-6 col-lg-4">
+      <!-- Individual file card with hover effects -->
+      <div class="card tool-card">
+        <div class="card-body">
+          <div class="d-flex align-items-start">
+            
+            <!-- ===== FILE ICON ===== -->
+            <!-- Purple envelope icon to represent newsletter file -->
+            <div class="icon-container bg-purple-subtle text-purple">
+              <i class="bi bi-envelope fs-4"></i>
+            </div>
+            
+            <!-- ===== FILE INFORMATION AND ACTIONS ===== -->
+            <div class="flex-grow-1">
+              <!-- File name (extracted from public_id path) -->
+              <h5 class="card-title mb-1">
+                {{ file.public_id.split('/')[-1] }}
+              </h5>
+              
+              <!-- Upload date (formatted using custom Jinja2 filter) -->
+              <p class="card-text">Uploaded on {{ file.created_at | format_datetime }}</p>
+              
+              <!-- ===== ACTION BUTTONS ===== -->
+              <div class="mt-3">
+                <!-- Edit: Opens GrapesJS editor for file modification -->
+                <a
+                  href="{{ url_for('newsletter.edit_file', file_id=file.public_id) }}"
+                  class="btn btn-sm btn-secondary"
+                  >Edit</a
+                >
+                
+                <!-- Download: Triggers file download (served through Flask to avoid mixed content) -->
+                <a
+                  href="{{ url_for('newsletter.download_file', file_id=file.public_id) }}"
+                  class="btn btn-sm btn-success"
+                  >Download</a
+                >
+                
+                <!-- Delete: Removes file from Cloudinary storage -->
+                <a
+                  href="{{ url_for('newsletter.delete_file', file_id=file.public_id) }}"
+                  class="btn btn-sm btn-danger"
+                  >Delete</a
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    <!-- End file card loop -->
+    
+  </div>
+</section>
+{% endblock %}

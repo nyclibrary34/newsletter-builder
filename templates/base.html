@@ -1,0 +1,377 @@
+<!--
+==============================================================================
+BASE TEMPLATE - NYC Records Management System
+==============================================================================
+This is the main layout template that provides the common structure for all pages.
+Includes sidebar navigation, responsive design, and integration with external libraries.
+
+Template Blocks Available:
+- title: Page title (defaults to "NYC Records Management System")
+- extra_css: Additional CSS for specific pages
+- content: Main page content
+- extra_js: Additional JavaScript for specific pages
+
+External Dependencies:
+- Bootstrap 5.3.0: UI framework for responsive design
+- Google Fonts (Inter): Primary typography
+- Material Icons: Icon set for navigation and UI elements
+- Bootstrap Icons: Additional icon set
+- SweetAlert2: Beautiful alert/modal system for user feedback
+==============================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <!-- Basic HTML5 meta tags for proper rendering and SEO -->
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>{% block title %}NYC Records Management System{% endblock %}</title>
+
+    <!-- ========================================================================
+         EXTERNAL CSS DEPENDENCIES
+         ======================================================================== -->
+    
+    <!-- Bootstrap CSS: Complete UI framework for responsive grid and components -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+
+    <!-- Google Fonts: Inter font family for modern, clean typography -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    
+    <!-- Material Icons: Google's icon font for navigation and UI elements -->
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Icons"
+      rel="stylesheet"
+    />
+    
+    <!-- Bootstrap Icons: Additional icon font for enhanced UI elements -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+    />
+    
+    <!-- SweetAlert2 CSS: Beautiful, responsive, customizable replacement for JavaScript alerts -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11.22.2/dist/sweetalert2.min.css">
+
+    <!-- ========================================================================
+         CUSTOM CSS STYLES
+         ======================================================================== -->
+    <style>
+      /* ===== GLOBAL LAYOUT STYLES ===== */
+      body {
+        font-family: "Inter", sans-serif;  /* Clean, modern sans-serif font */
+        background-color: #f8f9fa;         /* Light gray background */
+        display: flex;                     /* Flexbox layout for sidebar + main content */
+        min-height: 100vh;                 /* Full viewport height */
+        overflow-x: hidden;                /* Prevent horizontal scrolling */
+      }
+
+      /* ===== SIDEBAR NAVIGATION STYLES ===== */
+      .sidebar {
+        width: 250px;                      /* Fixed sidebar width */
+        background-color: white;           /* White background for contrast */
+        padding: 1.5rem;                   /* Internal spacing */
+        display: flex;                     /* Flexbox for logo + nav layout */
+        flex-direction: column;            /* Vertical stacking */
+        justify-content: space-between;    /* Space between logo and nav items */
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);  /* Subtle drop shadow */
+        height: 100vh;                     /* Full viewport height */
+        overflow-y: auto;                  /* Scroll if content overflows */
+        position: fixed;                   /* Fixed positioning for sidebar */
+        left: 0;                          /* Positioned at left edge */
+        top: 0;                           /* Positioned at top edge */
+        z-index: 1000;                   /* High z-index to stay above content */
+      }
+
+      /* ===== NAVIGATION LINK STYLES ===== */
+      .sidebar .nav-link {
+        color: #4b5563;                    /* Default gray text color */
+        display: flex;                     /* Flexbox for icon + text alignment */
+        align-items: center;               /* Vertically center icon and text */
+        padding: 0.625rem 0.75rem;         /* Internal padding for clickable area */
+        border-radius: 0.5rem;             /* Rounded corners */
+        margin-bottom: 0.25rem;            /* Space between nav items */
+        font-size: 0.875rem;               /* Slightly smaller font size */
+        font-weight: 500;                  /* Medium font weight */
+        text-decoration: none;             /* Remove underline */
+        transition: all 0.2s ease;         /* Smooth hover animations */
+      }
+
+      /* ===== NAVIGATION ICON STYLES ===== */
+      .sidebar .nav-link .material-icons {
+        margin-right: 0.75rem;             /* Space between icon and text */
+        font-size: 1.25rem;                /* Icon size */
+        color: #6b7280;                    /* Default icon color */
+      }
+
+      /* ===== ACTIVE NAVIGATION STATE ===== */
+      .sidebar .nav-link.active,
+      .sidebar .nav-link.active:hover {
+        background-color: #10b981;         /* Green background for active item */
+        color: white;                      /* White text for contrast */
+      }
+
+      .sidebar .nav-link.active .material-icons {
+        color: white;                      /* White icon for active state */
+      }
+
+      /* ===== HOVER EFFECTS FOR INACTIVE LINKS ===== */
+      .sidebar .nav-link:not(.active):hover {
+        background-color: #e5e7eb;         /* Light gray hover background */
+        color: #374151;                    /* Darker text on hover */
+      }
+
+      .sidebar .nav-link:not(.active):hover .material-icons {
+        color: #4b5563;                    /* Darker icon on hover */
+      }
+
+      /* ===== MAIN CONTENT AREA ===== */
+      .main-content {
+        flex-grow: 1;                      /* Take remaining horizontal space */
+        margin-left: 250px;                /* Account for fixed sidebar width */
+        padding: 2rem;                     /* Internal content padding */
+        overflow-y: auto;                  /* Scroll if content overflows */
+        min-height: 100vh;                 /* Full viewport height */
+      }
+
+      /* ===== MOBILE SIDEBAR TOGGLE BUTTON ===== */
+      .sidebar-toggle {
+        display: none;                     /* Hidden on desktop */
+        position: fixed;                   /* Fixed positioning */
+        top: 1rem;                        /* Top spacing */
+        left: 1rem;                       /* Left spacing */
+        z-index: 1030;                    /* Above sidebar overlay */
+        background-color: #fff;            /* White background */
+        border: 1px solid #dee2e6;        /* Light gray border */
+        border-radius: 0.375rem;          /* Rounded corners */
+        padding: 0.5rem 0.75rem;          /* Internal padding */
+      }
+
+      /* ===== FLASH MESSAGES STYLES ===== */
+      /* Legacy flash message list styles (kept for compatibility) */
+      .flashes {
+        list-style: none;                 /* Remove bullet points */
+        padding: 0;                       /* Remove padding */
+        margin-bottom: 1rem;              /* Bottom spacing */
+      }
+
+      .flashes li {
+        background-color: #d1ecf1;        /* Light blue background */
+        color: #0c5460;                   /* Dark blue text */
+        padding: 0.75rem 1rem;            /* Internal padding */
+        border: 1px solid #bee5eb;        /* Light blue border */
+        border-radius: 0.25rem;           /* Rounded corners */
+        margin-bottom: 0.5rem;            /* Space between messages */
+      }
+
+      /* ===== BOOTSTRAP ALERT OVERRIDES ===== */
+      .alert-success {
+        background-color: #d4edda;        /* Light green background */
+        color: #155724;                   /* Dark green text */
+        border-color: #c3e6cb;            /* Light green border */
+      }
+
+      .alert-danger {
+        background-color: #f8d7da;        /* Light red background */
+        color: #721c24;                   /* Dark red text */
+        border-color: #f5c6cb;            /* Light red border */
+      }
+
+      /* ===== RESPONSIVE DESIGN FOR MOBILE DEVICES ===== */
+      @media (max-width: 991.98px) {
+        .sidebar {
+          position: fixed;                 /* Keep fixed positioning */
+          top: 0;                         /* Full height positioning */
+          bottom: 0;
+          left: 0;
+          z-index: 1020;                  /* Above main content */
+          margin-left: -260px;            /* Hidden by default (off-screen) */
+          transition: margin-left 0.3s ease;  /* Smooth slide animation */
+        }
+
+        .sidebar.show {
+          margin-left: 0;                 /* Slide into view when active */
+        }
+
+        .main-content {
+          margin-left: 0;                 /* Full width on mobile */
+        }
+
+        .sidebar-toggle {
+          display: block;                 /* Show toggle button on mobile */
+        }
+
+        body.sidebar-open .main-content {
+          margin-left: 0;                 /* Prevent content shift */
+        }
+
+        body.sidebar-open::before {
+          content: "";                    /* Create overlay backdrop */
+          position: fixed;                /* Cover entire viewport */
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-color: rgba(0, 0, 0, 0.5);  /* Semi-transparent black */
+          z-index: 1010;                 /* Below sidebar, above content */
+        }
+      }
+    </style>
+
+    <!-- Template block for page-specific CSS -->
+    {% block extra_css %}{% endblock %}
+  </head>
+  
+  <body>
+    <!-- ========================================================================
+         MOBILE NAVIGATION TOGGLE
+         ======================================================================== -->
+    <!-- Mobile-only button to show/hide sidebar on smaller screens -->
+    <button
+      aria-controls="sidebarMenu"          
+      aria-expanded="false"               
+      aria-label="Toggle navigation"      
+      class="sidebar-toggle d-lg-none"    
+      data-bs-target="#sidebarMenu"       
+      data-bs-toggle="collapse"           
+      type="button"
+      onclick="toggleSidebar()"
+    >
+      <span class="material-icons">menu</span>
+    </button>
+
+    <!-- ========================================================================
+         SIDEBAR NAVIGATION
+         ======================================================================== -->
+    <!-- Fixed sidebar containing logo and main navigation links -->
+    <aside class="sidebar" id="sidebarMenu">
+      <div>
+        <!-- ===== LOGO SECTION ===== -->
+        <div class="mb-4 text-center">
+          <img
+            src="{{ url_for('static', filename='logo/records_logo.svg') }}"
+            alt="NYC Records Logo"
+            style="max-width: 100%; height: auto; max-height: 60px"
+          />
+        </div>
+        
+        <!-- ===== NAVIGATION MENU ===== -->
+        <nav class="nav flex-column">
+          <!-- Newsletter Builder: Main feature for creating/editing newsletters -->
+          <a class="nav-link" href="{{ url_for('newsletter.upload') }}">
+            <span class="material-icons">dashboard</span>
+            <span>Newsletter Builder</span>
+          </a>
+          
+          <!-- Image Adjustment: Tool for processing and adjusting images -->
+          <a class="nav-link" href="{{ url_for('tools.image_adjustment') }}">
+            <span class="material-icons">image</span>
+            <span>Image Adjustment</span>
+          </a>
+          
+          <!-- HTML to PDF: Convert HTML files to PDF documents -->
+          <a
+            class="nav-link"
+            href="{{ url_for('main.tool_preview', tool_name='html-to-pdf') }}"
+          >
+            <span class="material-icons">picture_as_pdf</span>
+            <span>HTML to PDF</span>
+          </a>
+        </nav>
+      </div>
+    </aside>
+
+    <!-- ========================================================================
+         MAIN CONTENT AREA
+         ======================================================================== -->
+    <!-- Primary content area that takes up remaining space next to sidebar -->
+    <main class="main-content">
+      
+      <!-- ===== FLASH MESSAGES SECTION ===== -->
+      <!-- Server-side messages (success, error, etc.) displayed to user -->
+      {% with messages = get_flashed_messages(with_categories=true) %} 
+      {% if messages %} 
+        {% for category, message in messages %}
+        <div
+          class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show"
+          role="alert"
+        >
+          {{ message }}
+          <button
+            type="button"
+            class="btn-close"
+            data-bs-dismiss="alert"
+            aria-label="Close"
+          ></button>
+        </div>
+        {% endfor %} 
+      {% endif %} 
+      {% endwith %} 
+      
+      <!-- ===== PAGE CONTENT BLOCK ===== -->
+      <!-- Child templates inject their content here -->
+      {% block content %}{% endblock %}
+    </main>
+
+    <!-- ========================================================================
+         EXTERNAL JAVASCRIPT DEPENDENCIES
+         ======================================================================== -->
+    
+    <!-- Bootstrap JS: Complete JavaScript bundle including Popper.js for tooltips/dropdowns -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- SweetAlert2 JS: Beautiful, responsive, customizable alert/modal system -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.22.2/dist/sweetalert2.all.min.js"></script>
+
+    <!-- ========================================================================
+         BASE JAVASCRIPT FUNCTIONALITY
+         ======================================================================== -->
+    <script>
+      /**
+       * Toggle mobile sidebar visibility
+       * Adds/removes CSS classes to show/hide sidebar with overlay
+       */
+      function toggleSidebar() {
+        const sidebar = document.getElementById("sidebarMenu");
+        const body = document.body;
+
+        if (sidebar.classList.contains("show")) {
+          // Hide sidebar
+          sidebar.classList.remove("show");
+          body.classList.remove("sidebar-open");
+        } else {
+          // Show sidebar
+          sidebar.classList.add("show");
+          body.classList.add("sidebar-open");
+        }
+      }
+
+      /**
+       * Close sidebar when clicking outside on mobile devices
+       * Improves user experience by providing intuitive close behavior
+       */
+      document.addEventListener("click", function (event) {
+        const sidebar = document.getElementById("sidebarMenu");
+        const toggle = document.querySelector(".sidebar-toggle");
+
+        // Only on mobile screens with sidebar open
+        if (
+          window.innerWidth <= 991.98 &&
+          sidebar.classList.contains("show") &&
+          !sidebar.contains(event.target) &&
+          !toggle.contains(event.target)
+        ) {
+          toggleSidebar();
+        }
+      });
+    </script>
+
+    <!-- Template block for page-specific JavaScript -->
+    {% block extra_js %}{% endblock %}
+  </body>
+</html>

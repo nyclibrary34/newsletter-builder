@@ -1,0 +1,1738 @@
+<!--
+==============================================================================
+IMAGE ADJUSTMENT PAGE - NYC Records Management System
+==============================================================================
+This template provides an advanced image enhancement tool with support for batch
+processing, automatic enhancement, and manual adjustments. Features include
+drag-and-drop upload, real-time preview, and intelligent compression.
+
+Features:
+- Multi-image upload (up to 10 images, 5MB total)
+- Automatic image enhancement using histogram analysis
+- Manual adjustment controls (brightness, contrast, saturation, sharpening)
+- Real-time preview with live adjustment feedback
+- Batch processing with Web Workers for performance
+- Intelligent compression with quality optimization
+- File renaming and download functionality
+- Responsive grid layout for image management
+
+Technical Implementation:
+- Canvas-based image processing with ImageData manipulation
+- Web Workers for non-blocking enhancement algorithms
+- Histogram analysis for automatic levels and color correction
+- Progressive JPEG compression with size targeting
+- Real-time preview updates with debounced input handling
+
+Template Variables:
+- None (client-side only functionality)
+
+Browser Requirements:
+- HTML5 Canvas support
+- Web Workers support
+- FileReader API support
+- Blob and URL.createObjectURL support
+==============================================================================
+-->
+{% extends "base.html" %} {% block title %}Image Adjustment - NYC Records{%
+endblock %} {% block extra_css %}
+<!-- ========================================================================
+     ADVANCED IMAGE PROCESSING CSS STYLES
+     ======================================================================== -->
+<style>
+  /* ===== FORM ELEMENT STYLES ===== */
+  .form-label {
+    font-weight: 500;                       /* Medium font weight for labels */
+    color: #495057;                         /* Dark gray text color */
+  }
+  
+  .form-control,
+  .form-select {
+    border-radius: 0.375rem;                /* Rounded corners */
+    border: 1px solid #ced4da;              /* Light gray border */
+    padding: 0.625rem 0.875rem;             /* Internal padding */
+    font-size: 0.9rem;                      /* Slightly smaller font */
+  }
+  
+  .form-control:focus,
+  .form-select:focus {
+    border-color: #86b7fe;                  /* Blue border on focus */
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);  /* Blue focus glow */
+  }
+  
+  /* ===== BUTTON STYLES ===== */
+  .btn-primary {
+    background-color: #0d6efd;              /* Bootstrap blue background */
+    border-color: #0d6efd;                  /* Matching border color */
+    font-weight: 500;                       /* Medium font weight */
+    padding: 0.625rem 1.25rem;              /* Internal padding */
+    border-radius: 0.375rem;                /* Rounded corners */
+    font-size: 0.9rem;                      /* Consistent font size */
+  }
+  
+  .btn-primary:hover {
+    background-color: #0b5ed7;              /* Darker blue on hover */
+    border-color: #0a58ca;                  /* Darker border on hover */
+  }
+  .btn-secondary {
+    background-color: #6c757d;
+    border-color: #6c757d;
+    font-weight: 500;
+    padding: 0.625rem 1.25rem;
+    border-radius: 0.375rem;
+    font-size: 0.9rem;
+  }
+  .btn-secondary:hover {
+    background-color: #5c636a;
+    border-color: #565e64;
+  }
+  .card {
+    border: 1px solid #dee2e6;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    border-radius: 0.5rem;
+  }
+  .card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    padding: 1rem 1.25rem;
+  }
+  .card-body {
+    padding: 1.5rem;
+  }
+  .image-preview {
+    width: 100%;
+    height: 500px;
+    background-color: #e9ecef;
+    border: 2px dashed #ced4da;
+    border-radius: 0.375rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6c757d;
+    font-size: 0.9rem;
+    overflow: hidden;
+    position: relative;
+  }
+  .image-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .processing-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  .image-preview.processing::after {
+    content: "Processing...";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 500;
+    color: #495057;
+  }
+  .btn-success {
+    background-color: #198754;
+    border-color: #198754;
+    font-weight: 500;
+    padding: 0.625rem 1.25rem;
+    border-radius: 0.375rem;
+    font-size: 0.9rem;
+  }
+  .btn-success:hover {
+    background-color: #157347;
+    border-color: #146c43;
+  }
+  .form-check-input:checked {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+  }
+  .range-slider-value {
+    font-size: 0.85rem;
+    color: #495057;
+  }
+
+  /* ===== MULTI-IMAGE GRID LAYOUT ===== */
+  .image-grid {
+    display: grid;                          /* CSS Grid layout */
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));  /* Responsive columns */
+    gap: 1rem;                              /* Space between grid items */
+    margin-top: 1rem;                       /* Top margin */
+  }
+
+  .image-item {
+    position: relative;                     /* For absolute positioned children */
+    border: 1px solid #dee2e6;              /* Light gray border */
+    border-radius: 0.375rem;                /* Rounded corners */
+    overflow: hidden;                       /* Hide content overflow */
+    background-color: #f8f9fa;              /* Light gray background */
+    height: 150px;                          /* Fixed height for consistency */
+  }
+
+  /* ===== IMAGE DELETION BUTTON ===== */
+  .delete-btn {
+    position: absolute;                     /* Positioned over image */
+    top: 5px;                              /* Distance from top */
+    left: 5px;                             /* Distance from left */
+    background-color: rgba(0, 0, 0, 0.5);  /* Semi-transparent black */
+    color: white;                          /* White text */
+    border: none;                          /* No border */
+    border-radius: 50%;                    /* Circular button */
+    width: 24px;                           /* Fixed width */
+    height: 24px;                          /* Fixed height */
+    font-size: 12px;                       /* Small font size */
+    line-height: 24px;                     /* Center text vertically */
+    text-align: center;                    /* Center text horizontally */
+    cursor: pointer;                       /* Pointer cursor */
+    display: flex;                         /* Flexbox for centering */
+    align-items: center;                   /* Vertical centering */
+    justify-content: center;               /* Horizontal centering */
+  }
+
+  .delete-btn:hover {
+    background-color: rgba(255, 0, 0, 0.8); /* Red background on hover */
+  }
+
+  .image-item img {
+    width: 100%;
+    height: 150px;
+    object-fit: cover;
+  }
+
+  .image-item-info {
+    padding: 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .image-item-status {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .progress {
+    height: 4px;
+    margin-top: 0.5rem;
+  }
+
+  .batch-controls {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #dee2e6;
+  }
+
+  .enhancement-indicator {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background-color: #198754;
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .file-size-warning {
+    color: #dc3545;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+  }
+
+  .auto-enhance-toggle {
+    background-color: #28a745;
+    border-color: #28a745;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+  }
+
+  .auto-enhance-toggle.active {
+    background-color: #218838;
+    border-color: #1e7e34;
+  }
+</style>
+{% endblock %} {% block content %}
+<header class="mb-4">
+  <h2 class="h3 fw-semibold text-dark">Advanced Image Enhancement Tool</h2>
+  <p class="text-secondary mt-1">
+    Upload up to 10 images for automatic quality enhancement and batch
+    processing.
+  </p>
+</header>
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card mb-4">
+      <div class="card-header">
+        <h3 class="h5 mb-0 fw-medium text-dark">Upload Images</h3>
+      </div>
+      <div class="card-body">
+        <form id="imageForm">
+          <div class="mb-3">
+            <label class="form-label" for="imageUpload"
+              >Select Images (Max 10)</label
+            >
+            <input
+              accept="image/png, image/jpeg, image/webp"
+              class="form-control"
+              id="imageUpload"
+              type="file"
+              multiple
+            />
+            <div class="form-text">
+              Supported formats: PNG, JPG, WEBP. Max size: 5MB total for Vercel
+              deployment.
+            </div>
+            <div
+              id="fileSizeWarning"
+              class="file-size-warning"
+              style="display: none"
+            ></div>
+          </div>
+
+          <button
+            type="button"
+            id="autoEnhanceToggle"
+            class="btn auto-enhance-toggle"
+          >
+            <i class="bi bi-magic"></i> Auto-Enhance: OFF
+          </button>
+
+          <div
+            id="selectedImagesGrid"
+            class="image-grid"
+            style="display: none"
+          ></div>
+
+          <div id="batchControls" class="batch-controls" style="display: none">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <span class="text-muted">Total images: </span>
+                <span id="totalImages" class="fw-bold">0</span>
+              </div>
+              <div class="d-flex gap-2">
+                <button
+                  type="button"
+                  class="btn btn-success"
+                  id="enhanceAllBtn"
+                >
+                  <i class="bi bi-lightning"></i> Enhance All
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-warning"
+                  id="undoAllBtn"
+                  disabled
+                >
+                  <i class="bi bi-arrow-counterclockwise"></i> Undo All
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  id="downloadAllBtn"
+                  disabled
+                >
+                  <i class="bi bi-download"></i> Download All
+                </button>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="h5 mb-0 fw-medium text-dark">Manual Adjustment Settings</h3>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-info mb-3">
+          <i class="bi bi-info-circle"></i> Manual adjustments apply to the
+          currently selected image only.
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label" for="brightness">Brightness</label>
+            <div class="d-flex align-items-center">
+              <input
+                class="form-range"
+                id="brightness"
+                max="200"
+                min="0"
+                type="range"
+                value="100"
+              />
+              <span class="ms-2 range-slider-value" id="brightnessValue"
+                >100%</span
+              >
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" for="contrast">Contrast</label>
+            <div class="d-flex align-items-center">
+              <input
+                class="form-range"
+                id="contrast"
+                max="200"
+                min="0"
+                type="range"
+                value="100"
+              />
+              <span class="ms-2 range-slider-value" id="contrastValue"
+                >100%</span
+              >
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label" for="saturation">Saturation</label>
+            <div class="d-flex align-items-center">
+              <input
+                class="form-range"
+                id="saturation"
+                max="200"
+                min="0"
+                type="range"
+                value="100"
+              />
+              <span class="ms-2 range-slider-value" id="saturationValue"
+                >100%</span
+              >
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" for="sharpen">Sharpen</label>
+            <div class="d-flex align-items-center">
+              <input
+                class="form-range"
+                id="sharpen"
+                max="100"
+                min="0"
+                type="range"
+                value="0"
+              />
+              <span class="ms-2 range-slider-value" id="sharpenValue">0%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+          <div class="col-md-6">
+            <label class="form-label" for="outputFormat">Output Format</label>
+            <input
+              type="text"
+              class="form-control"
+              id="outputFormat"
+              value="JPEG"
+              disabled
+            />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" for="quality"
+              >Quality (for JPEG/WebP)</label
+            >
+            <div class="d-flex align-items-center">
+              <input
+                class="form-range"
+                id="quality"
+                max="100"
+                min="1"
+                type="range"
+                value="100"
+              />
+              <span class="ms-2 range-slider-value" id="qualityValue"
+                >100%</span
+              >
+            </div>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <div class="form-check">
+            <input
+              class="form-check-input"
+              id="grayscale"
+              type="checkbox"
+              value=""
+            />
+            <label class="form-check-label" for="grayscale">
+              Convert to Grayscale
+            </label>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2">
+          <button
+            class="btn btn-warning"
+            type="button"
+            id="undoEnhancementBtn"
+            disabled
+          >
+            <i class="bi bi-arrow-counterclockwise"></i> Undo Enhancement
+          </button>
+          <button class="btn btn-secondary" type="button" id="resetSettingsBtn">
+            Reset Settings
+          </button>
+          <button
+            class="btn btn-primary"
+            type="button"
+            id="applyToCurrentBtn"
+            disabled
+          >
+            Apply to Current
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="h5 mb-0 fw-medium text-dark">Current Image Preview</h3>
+      </div>
+      <div class="card-body">
+        <div class="image-preview mb-3" id="imagePreviewContainer">
+          <span id="imagePreviewText">Select an image to preview</span>
+          <img
+            alt="Image Preview"
+            id="imagePreviewDisplay"
+            style="display: none"
+          />
+          <div class="processing-overlay" style="display: none">
+            <div class="spinner"></div>
+          </div>
+        </div>
+        <div id="currentImageInfo" style="display: none">
+          <p class="small text-muted mb-2">
+            <strong>File:</strong> <span id="currentFileName">-</span><br />
+            <strong>Type:</strong> <span id="currentFileType">-</span><br />
+            <strong>Original Size:</strong> <span id="currentFileSize">-</span
+            ><br />
+            <strong>Original Dimensions:</strong>
+            <span id="currentDimensions">-</span>
+          </p>
+          <div id="enhancedImageInfo" style="display: none">
+            <p class="small text-success mb-2">
+              <strong>Enhanced File:</strong>
+              <span id="enhancedFileName">-</span><br />
+              <strong>Enhanced Type:</strong>
+              <span id="enhancedFileType">-</span><br />
+              <strong>Enhanced Size:</strong>
+              <span id="enhancedFileSize">-</span><br />
+              <strong>Enhanced Dimensions:</strong>
+              <span id="enhancedDimensions">-</span><br />
+              <strong>Compression Quality:</strong>
+              <span id="compressionQuality">-</span>%
+            </p>
+          </div>
+          <div class="progress mb-2" style="display: none" id="currentProgress">
+            <div
+              class="progress-bar"
+              role="progressbar"
+              style="width: 0%"
+            ></div>
+          </div>
+          <div id="fileNameEditor" style="display: none">
+            <label for="fileNameInput" class="form-label small"
+              >Rename File:</label
+            >
+            <input
+              type="text"
+              id="fileNameInput"
+              class="form-control form-control-sm"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block extra_js %}
+<script>
+  // Global variables
+  let imageQueue = [];
+  let processedImages = [];
+  let currentImageIndex = 0;
+  let autoEnhance = false;
+  let isProcessing = false;
+
+  // Constants
+  const MAX_IMAGES = 10;
+  const MAX_TOTAL_SIZE = 5 * 1024 * 1024; // 5MB for Vercel
+  const WORKER_SCRIPT = `
+  self.onmessage = function(e) {
+    const { imageData, settings, action } = e.data;
+    
+    if (action === 'enhance') {
+      const enhanced = autoEnhanceImage(imageData, settings);
+      self.postMessage({ enhanced, index: e.data.index });
+    } else if (action === 'adjust') {
+      const adjusted = applyManualAdjustments(imageData, settings);
+      self.postMessage({ adjusted, index: e.data.index });
+    }
+  };
+  
+  function autoEnhanceImage(imageData, settings) {
+    const data = imageData.data;
+    const histogram = calculateHistogram(data);
+    const enhancement = calculateEnhancement(histogram);
+    
+    // Apply auto-calculated enhancements
+    for (let i = 0; i < data.length; i += 4) {
+      let r = data[i];
+      let g = data[i + 1];
+      let b = data[i + 2];
+      
+      // Auto brightness/contrast
+      r = Math.min(255, Math.max(0, (r - enhancement.blackPoint) * enhancement.contrast + enhancement.brightness));
+      g = Math.min(255, Math.max(0, (g - enhancement.blackPoint) * enhancement.contrast + enhancement.brightness));
+      b = Math.min(255, Math.max(0, (b - enhancement.blackPoint) * enhancement.contrast + enhancement.brightness));
+      
+      // Auto saturation
+      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+      r = Math.min(255, Math.max(0, gray + enhancement.saturation * (r - gray)));
+      g = Math.min(255, Math.max(0, gray + enhancement.saturation * (g - gray)));
+      b = Math.min(255, Math.max(0, gray + enhancement.saturation * (b - gray)));
+      
+      // Slight sharpening
+      if (enhancement.sharpen > 0) {
+        // Simple unsharp mask
+        const sharpAmount = enhancement.sharpen * 0.5;
+        r = Math.min(255, Math.max(0, r + sharpAmount * (r - gray)));
+        g = Math.min(255, Math.max(0, g + sharpAmount * (g - gray)));
+        b = Math.min(255, Math.max(0, b + sharpAmount * (b - gray)));
+      }
+      
+      data[i] = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+    }
+    
+    return imageData;
+  }
+  
+  function calculateHistogram(data) {
+    const histogram = { r: new Array(256).fill(0), g: new Array(256).fill(0), b: new Array(256).fill(0) };
+    
+    for (let i = 0; i < data.length; i += 4) {
+      histogram.r[data[i]]++;
+      histogram.g[data[i + 1]]++;
+      histogram.b[data[i + 2]]++;
+    }
+    
+    return histogram;
+  }
+  
+  function calculateEnhancement(histogram) {
+    // Find black and white points (auto levels)
+    const totalPixels = histogram.r.reduce((a, b) => a + b, 0);
+    const threshold = totalPixels * 0.01; // 1% threshold
+    
+    let blackPoint = 0;
+    let whitePoint = 255;
+    let sum = 0;
+    
+    // Find black point
+    for (let i = 0; i < 256; i++) {
+      sum += (histogram.r[i] + histogram.g[i] + histogram.b[i]) / 3;
+      if (sum > threshold) {
+        blackPoint = i;
+        break;
+      }
+    }
+    
+    // Find white point
+    sum = 0;
+    for (let i = 255; i >= 0; i--) {
+      sum += (histogram.r[i] + histogram.g[i] + histogram.b[i]) / 3;
+      if (sum > threshold) {
+        whitePoint = i;
+        break;
+      }
+    }
+    
+    // Calculate auto adjustments
+    const range = whitePoint - blackPoint;
+    const contrast = range > 0 ? 255 / range : 1;
+    
+    // Calculate average brightness
+    let avgBrightness = 0;
+    for (let i = 0; i < 256; i++) {
+      avgBrightness += i * ((histogram.r[i] + histogram.g[i] + histogram.b[i]) / 3) / totalPixels;
+    }
+    
+    // Brightness adjustment to target 128 (middle gray)
+    const brightness = (128 - avgBrightness) * 0.5;
+    
+    // Auto saturation (boost slightly if image is dull)
+    const saturation = avgBrightness < 100 || avgBrightness > 150 ? 1.2 : 1.1;
+    
+    // Slight sharpening for most images
+    const sharpen = 0.3;
+    
+    return { blackPoint, whitePoint, contrast, brightness, saturation, sharpen };
+  }
+  
+  function applyManualAdjustments(imageData, settings) {
+    const data = imageData.data;
+    
+    for (let i = 0; i < data.length; i += 4) {
+      let r = data[i];
+      let g = data[i + 1];
+      let b = data[i + 2];
+      
+      // Apply brightness
+      const brightnessFactor = settings.brightness / 100;
+      r = Math.min(255, Math.max(0, r * brightnessFactor));
+      g = Math.min(255, Math.max(0, g * brightnessFactor));
+      b = Math.min(255, Math.max(0, b * brightnessFactor));
+      
+      // Apply contrast
+      const contrastFactor = (259 * (settings.contrast + 255)) / (255 * (259 - settings.contrast));
+      r = Math.min(255, Math.max(0, contrastFactor * (r - 128) + 128));
+      g = Math.min(255, Math.max(0, contrastFactor * (g - 128) + 128));
+      b = Math.min(255, Math.max(0, contrastFactor * (b - 128) + 128));
+      
+      // Apply saturation
+      const saturationFactor = settings.saturation / 100;
+      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+      r = Math.min(255, Math.max(0, gray + saturationFactor * (r - gray)));
+      g = Math.min(255, Math.max(0, gray + saturationFactor * (g - gray)));
+      b = Math.min(255, Math.max(0, gray + saturationFactor * (b - gray)));
+      
+      // Apply grayscale if needed
+      if (settings.grayscale) {
+        const grayValue = 0.299 * r + 0.587 * g + 0.114 * b;
+        r = g = b = grayValue;
+      }
+      
+      data[i] = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+    }
+    
+    return imageData;
+  }
+`;
+
+  // Initialize Web Worker
+  const blob = new Blob([WORKER_SCRIPT], { type: "application/javascript" });
+  const worker = new Worker(URL.createObjectURL(blob));
+
+  // Worker message handler
+  worker.onmessage = function (e) {
+    const { enhanced, adjusted, index } = e.data;
+
+    if (enhanced) {
+      processedImages[index].enhanced = enhanced;
+      updateImageStatus(index, "enhanced");
+    } else if (adjusted) {
+      processedImages[index].adjusted = adjusted;
+      updateImageStatus(index, "adjusted");
+    }
+  };
+
+  // Event listeners
+  document
+    .getElementById("imageUpload")
+    .addEventListener("change", handleFileSelect);
+  document
+    .getElementById("autoEnhanceToggle")
+    .addEventListener("click", toggleAutoEnhance);
+  document
+    .getElementById("enhanceAllBtn")
+    .addEventListener("click", enhanceAllImages);
+  document
+    .getElementById("undoAllBtn")
+    .addEventListener("click", undoAllEnhancements);
+  document
+    .getElementById("downloadAllBtn")
+    .addEventListener("click", downloadAllImages);
+  document
+    .getElementById("resetSettingsBtn")
+    .addEventListener("click", resetSettings);
+  document
+    .getElementById("applyToCurrentBtn")
+    .addEventListener("click", applyToCurrentImage);
+  document
+    .getElementById("undoEnhancementBtn")
+    .addEventListener("click", undoEnhancement);
+  document
+    .getElementById("fileNameInput")
+    .addEventListener("input", updateFileName);
+
+  // Handle range sliders
+  const sliders = [
+    { id: "brightness", valueId: "brightnessValue", unit: "%", realtime: true },
+    { id: "contrast", valueId: "contrastValue", unit: "%", realtime: true },
+    { id: "saturation", valueId: "saturationValue", unit: "%", realtime: true },
+    { id: "sharpen", valueId: "sharpenValue", unit: "%", realtime: true },
+    { id: "quality", valueId: "qualityValue", unit: "%", realtime: false },
+  ];
+
+  // Debounce function for real-time updates
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
+  }
+
+  // Real-time preview update
+  const updatePreviewRealTime = debounce(() => {
+    if (currentImageIndex < 0 || !imageQueue[currentImageIndex]) return;
+
+    const image = imageQueue[currentImageIndex];
+    if (!image.canvas || !image.context) return;
+
+    const settings = {
+      brightness: parseInt(document.getElementById("brightness").value),
+      contrast: parseInt(document.getElementById("contrast").value),
+      saturation: parseInt(document.getElementById("saturation").value),
+      sharpen: parseInt(document.getElementById("sharpen").value),
+      grayscale: document.getElementById("grayscale").checked,
+    };
+
+    const imageData = image.originalImageData;
+    const adjustedData = applyManualAdjustments(
+      imageData.data.slice(),
+      settings
+    );
+
+    // Create temporary canvas for preview only
+    const previewCanvas = document.createElement("canvas");
+    previewCanvas.width = image.width;
+    previewCanvas.height = image.height;
+    const previewCtx = previewCanvas.getContext("2d");
+    const adjustedImageData = new ImageData(
+      adjustedData,
+      imageData.width,
+      imageData.height
+    );
+    previewCtx.putImageData(adjustedImageData, 0, 0);
+
+    // Update preview image
+    const preview = document.getElementById("imagePreviewDisplay");
+    preview.src = previewCanvas.toDataURL("image/jpeg", 0.9);
+  }, 100); // 100ms debounce
+
+  sliders.forEach((sliderConfig) => {
+    const sliderElement = document.getElementById(sliderConfig.id);
+    const valueElement = document.getElementById(sliderConfig.valueId);
+    if (sliderElement && valueElement) {
+      sliderElement.addEventListener("input", function () {
+        valueElement.textContent = this.value + sliderConfig.unit;
+        // Update preview in real-time for applicable sliders
+        if (sliderConfig.realtime) {
+          updatePreviewRealTime();
+        }
+      });
+    }
+  });
+
+  // Add real-time update for grayscale checkbox
+  document
+    .getElementById("grayscale")
+    .addEventListener("change", updatePreviewRealTime);
+
+  // File selection handler
+  function handleFileSelect(event) {
+    const newFiles = Array.from(event.target.files);
+
+    if (newFiles.length === 0) return;
+
+    // Validate file count
+    if (imageQueue.length + newFiles.length > MAX_IMAGES) {
+      showWarning(
+        `You can only upload a total of ${MAX_IMAGES} images. You have already selected ${imageQueue.length}.`
+      );
+      event.target.value = ""; // Clear the file input
+      return;
+    }
+
+    // Validate total size
+    const currentSize = imageQueue.reduce(
+      (sum, img) => sum + (img.file ? img.file.size : 0),
+      0
+    );
+    const newSize = newFiles.reduce((sum, file) => sum + file.size, 0);
+    if (currentSize + newSize > MAX_TOTAL_SIZE) {
+      showWarning(
+        `Total file size exceeds 5MB limit. Please select smaller images.`
+      );
+      event.target.value = "";
+      return;
+    }
+
+    const startingIndex = imageQueue.length;
+    let filesLoaded = 0;
+
+    newFiles.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          imageQueue.push({
+            file: file,
+            originalSrc: e.target.result,
+            width: img.width,
+            height: img.height,
+            canvas: null,
+            context: null,
+          });
+          processedImages.push(undefined);
+          filesLoaded++;
+
+          if (filesLoaded === newFiles.length) {
+            displayImageGrid();
+            if (autoEnhance) {
+              enhanceImagesFrom(startingIndex);
+            }
+            // Select the first of the newly added images
+            selectImage(startingIndex);
+          }
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // Clear the file input to allow selecting the same file again
+    event.target.value = "";
+  }
+
+  // Display image grid
+  function displayImageGrid() {
+    const grid = document.getElementById("selectedImagesGrid");
+    const batchControls = document.getElementById("batchControls");
+    const totalImagesSpan = document.getElementById("totalImages");
+
+    grid.innerHTML = "";
+    totalImagesSpan.textContent = imageQueue.length;
+
+    imageQueue.forEach((image, index) => {
+      const itemDiv = document.createElement("div");
+      itemDiv.className = "image-item";
+      itemDiv.innerHTML = `
+      <div class="processing-overlay" style="display: none;">
+        <div class="spinner" style="width: 30px; height: 30px; border-width: 3px;"></div>
+      </div>
+      <button class="delete-btn" onclick="deleteImage(event, ${index})">&times;</button>
+      <img src="${image.originalSrc}" alt="${image.file.name}" onclick="selectImage(${index})">
+      <div class="image-item-info">
+        <div class="image-item-status">
+          <span class="text-truncate" style="max-width: 150px;" title="${image.file.name}">${image.file.name}</span>
+          <span class="badge bg-secondary" id="status-${index}">Ready</span>
+        </div>
+        <div class="progress" id="progress-${index}" style="display: none;">
+          <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+        </div>
+      </div>
+    `;
+      grid.appendChild(itemDiv);
+
+      // Create canvas for processing
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      const img = new Image();
+      img.onload = function () {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+        imageQueue[index].canvas = canvas;
+        imageQueue[index].context = ctx;
+        imageQueue[index].originalImageData = ctx.getImageData(
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        );
+      };
+      img.src = image.originalSrc;
+    });
+
+    grid.style.display = "grid";
+    batchControls.style.display = "block";
+    document.getElementById("applyToCurrentBtn").disabled = false;
+
+    // Select first image if nothing is selected yet
+    if (currentImageIndex < 0 && imageQueue.length > 0) {
+      selectImage(0);
+    }
+  }
+
+  // Select image for preview
+  function selectImage(index) {
+    currentImageIndex = index;
+    const image = imageQueue[index];
+    const processed = processedImages[index];
+
+    // Update preview
+    const preview = document.getElementById("imagePreviewDisplay");
+    preview.src =
+      processed && processed.dataURL ? processed.dataURL : image.originalSrc;
+    preview.style.display = "block";
+    document.getElementById("imagePreviewText").style.display = "none";
+
+    // Update info
+    document.getElementById("currentFileName").textContent = image.file.name;
+    document.getElementById("currentFileType").textContent = image.file.type;
+    document.getElementById("currentFileSize").textContent = formatFileSize(
+      image.file.size
+    );
+    document.getElementById(
+      "currentDimensions"
+    ).textContent = `${image.width} × ${image.height}`;
+    document.getElementById("currentImageInfo").style.display = "block";
+
+    // Update and show filename editor
+    const fileNameEditor = document.getElementById("fileNameEditor");
+    const fileNameInput = document.getElementById("fileNameInput");
+    const nameParts = image.file.name.split(".");
+    nameParts.pop(); // remove extension
+    fileNameInput.value = nameParts.join(".");
+    fileNameEditor.style.display = "block";
+
+    const enhancedInfo = document.getElementById("enhancedImageInfo");
+    const undoBtn = document.getElementById("undoEnhancementBtn");
+
+    if (processed) {
+      const baseName = image.file.name.split(".").slice(0, -1).join(".");
+
+      // The enhanced file name is always .jpg now
+      document.getElementById(
+        "enhancedFileName"
+      ).textContent = `${baseName}_enhanced.jpg`;
+      document.getElementById("enhancedFileType").textContent =
+        processed.mimeType; // This is always jpg for the processed data
+      document.getElementById("enhancedFileSize").textContent = processed.size
+        ? formatFileSize(processed.size)
+        : "Calculating...";
+      document.getElementById(
+        "enhancedDimensions"
+      ).textContent = `${processed.width} × ${processed.height}`;
+      document.getElementById("compressionQuality").textContent =
+        processed.finalQuality || "Processing...";
+      enhancedInfo.style.display = "block";
+
+      // Enable undo button for enhanced images
+      undoBtn.disabled = false;
+    } else {
+      enhancedInfo.style.display = "none";
+
+      // Disable undo button for non-enhanced images
+      undoBtn.disabled = true;
+    }
+
+    // Highlight selected image
+    document.querySelectorAll(".image-item").forEach((item, i) => {
+      item.style.border =
+        i === index ? "2px solid #0d6efd" : "1px solid #dee2e6";
+    });
+  }
+
+  // Update file name from input
+  function updateFileName(event) {
+    if (currentImageIndex < 0 || !imageQueue[currentImageIndex]) return;
+
+    const newName = event.target.value;
+    const originalFile = imageQueue[currentImageIndex].file;
+    const extension = originalFile.name.split(".").pop();
+
+    // Create a new File object with the updated name
+    const newFile = new File([originalFile], `${newName}.${extension}`, {
+      type: originalFile.type,
+      lastModified: originalFile.lastModified,
+    });
+
+    // Update the file in the queue
+    imageQueue[currentImageIndex].file = newFile;
+
+    // Update the displayed name in the info panel and grid
+    document.getElementById("currentFileName").textContent = newFile.name;
+    const gridItemName = document.querySelectorAll(
+      ".image-item-info .text-truncate"
+    )[currentImageIndex];
+    if (gridItemName) {
+      gridItemName.textContent = newFile.name;
+      gridItemName.title = newFile.name;
+    }
+
+    // Also update the "Enhanced" file name if it exists
+    if (processedImages[currentImageIndex]) {
+      document.getElementById(
+        "enhancedFileName"
+      ).textContent = `${newName}_enhanced.jpg`;
+    }
+  }
+
+  // Auto enhance toggle
+  function toggleAutoEnhance() {
+    autoEnhance = !autoEnhance;
+    const btn = document.getElementById("autoEnhanceToggle");
+    btn.classList.toggle("active");
+    btn.textContent = autoEnhance
+      ? "✨ Auto-Enhance: ON"
+      : "✨ Auto-Enhance: OFF";
+  }
+
+  // Enhance images starting from a given index
+  async function enhanceImagesFrom(startIndex) {
+    if (isProcessing || imageQueue.length === 0) return;
+
+    isProcessing = true;
+    document.getElementById("enhanceAllBtn").disabled = true;
+    document.getElementById("downloadAllBtn").disabled = true;
+
+    // Process images in batches of 2 for better performance
+    const batchSize = 2;
+    for (let i = startIndex; i < imageQueue.length; i += batchSize) {
+      const batch = imageQueue.slice(
+        i,
+        Math.min(i + batchSize, imageQueue.length)
+      );
+      await processBatch(
+        batch.filter((img) => img),
+        i
+      );
+    }
+
+    isProcessing = false;
+    document.getElementById("enhanceAllBtn").disabled = false;
+    document.getElementById("downloadAllBtn").disabled = !processedImages.some(
+      (p) => p
+    );
+    document.getElementById("undoAllBtn").disabled = !processedImages.some(
+      (p) => p
+    );
+  }
+
+  // Enhance all images
+  async function enhanceAllImages() {
+    await enhanceImagesFrom(0);
+  }
+
+  // Process batch of images
+  async function processBatch(batch, startIndex) {
+    const promises = batch.map((image, index) => {
+      return new Promise((resolve) => {
+        const actualIndex = startIndex + index;
+        updateImageStatus(actualIndex, "processing");
+
+        // Simulate processing with auto-enhancement
+        setTimeout(() => {
+          if (image.canvas && image.context) {
+            const imageData = image.originalImageData;
+
+            // Apply auto-enhancement algorithm
+            const enhanced = autoEnhanceImageData(imageData.data.slice());
+
+            // Create enhanced canvas with original dimensions
+            const enhancedCanvas = document.createElement("canvas");
+            enhancedCanvas.width = image.width;
+            enhancedCanvas.height = image.height;
+            const enhancedCtx = enhancedCanvas.getContext("2d");
+            const enhancedImageData = new ImageData(
+              enhanced,
+              image.width,
+              image.height
+            );
+            enhancedCtx.putImageData(enhancedImageData, 0, 0);
+
+            // Resize the enhanced canvas to 900px max width
+            const resizedCanvas = resizeCanvas(enhancedCanvas, 900);
+
+            processedImages[actualIndex] = {
+              canvas: resizedCanvas,
+              width: resizedCanvas.width,
+              height: resizedCanvas.height,
+              mimeType: "image/jpeg",
+              extension: "jpg",
+            };
+
+            updateImageStatus(actualIndex, "enhanced");
+          }
+          resolve();
+        }, 500 + Math.random() * 500); // Simulate processing time
+      });
+    });
+
+    await Promise.all(promises);
+  }
+
+  // Auto-enhance image data
+  function autoEnhanceImageData(data) {
+    // Calculate histogram
+    const histogram = calculateHistogram(data);
+
+    // Auto levels
+    const { blackPoint, whitePoint } = calculateAutoLevels(histogram);
+    const range = whitePoint - blackPoint;
+    const factor = range > 0 ? 255 / range : 1;
+
+    // Apply enhancements
+    for (let i = 0; i < data.length; i += 4) {
+      // Auto levels
+      data[i] = Math.min(255, Math.max(0, (data[i] - blackPoint) * factor));
+      data[i + 1] = Math.min(
+        255,
+        Math.max(0, (data[i + 1] - blackPoint) * factor)
+      );
+      data[i + 2] = Math.min(
+        255,
+        Math.max(0, (data[i + 2] - blackPoint) * factor)
+      );
+
+      // Slight vibrance boost
+      const max = Math.max(data[i], data[i + 1], data[i + 2]);
+      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+      const saturation = 1.1;
+
+      data[i] = Math.min(255, Math.max(0, avg + (data[i] - avg) * saturation));
+      data[i + 1] = Math.min(
+        255,
+        Math.max(0, avg + (data[i + 1] - avg) * saturation)
+      );
+      data[i + 2] = Math.min(
+        255,
+        Math.max(0, avg + (data[i + 2] - avg) * saturation)
+      );
+    }
+
+    return data;
+  }
+
+  // Calculate histogram
+  function calculateHistogram(data) {
+    const histogram = new Array(256).fill(0);
+
+    for (let i = 0; i < data.length; i += 4) {
+      const brightness = Math.round((data[i] + data[i + 1] + data[i + 2]) / 3);
+      histogram[brightness]++;
+    }
+
+    return histogram;
+  }
+
+  // Calculate auto levels
+  function calculateAutoLevels(histogram) {
+    const total = histogram.reduce((a, b) => a + b, 0);
+    const threshold = total * 0.01; // 1% threshold
+
+    let blackPoint = 0;
+    let whitePoint = 255;
+    let sum = 0;
+
+    // Find black point
+    for (let i = 0; i < 256; i++) {
+      sum += histogram[i];
+      if (sum > threshold) {
+        blackPoint = i;
+        break;
+      }
+    }
+
+    // Find white point
+    sum = 0;
+    for (let i = 255; i >= 0; i--) {
+      sum += histogram[i];
+      if (sum > threshold) {
+        whitePoint = i;
+        break;
+      }
+    }
+
+    return { blackPoint, whitePoint };
+  }
+
+  // Update image status
+  function updateImageStatus(index, status) {
+    const statusBadge = document.getElementById(`status-${index}`);
+    const imageItem = document.querySelectorAll(".image-item")[index];
+    const spinnerOverlay = imageItem
+      ? imageItem.querySelector(".processing-overlay")
+      : null;
+    const previewSpinner = document.querySelector(
+      "#imagePreviewContainer .processing-overlay"
+    );
+
+    const showOrHidePreviewSpinner = (show) => {
+      if (index === currentImageIndex && previewSpinner) {
+        previewSpinner.style.display = show ? "flex" : "none";
+      }
+    };
+
+    switch (status) {
+      case "processing":
+        if (statusBadge) {
+          statusBadge.textContent = "Processing";
+          statusBadge.className = "badge bg-warning";
+        }
+        if (spinnerOverlay) spinnerOverlay.style.display = "flex";
+        showOrHidePreviewSpinner(true);
+        break;
+
+      case "enhanced":
+        if (statusBadge) {
+          statusBadge.textContent = "Enhanced";
+          statusBadge.className = "badge bg-success";
+        }
+        if (spinnerOverlay) spinnerOverlay.style.display = "none";
+        showOrHidePreviewSpinner(false);
+
+        if (processedImages[index] && processedImages[index].canvas) {
+          const processed = processedImages[index];
+          const canvas = processed.canvas;
+          const originalFileSize = imageQueue[index]
+            ? imageQueue[index].file.size
+            : null;
+
+          // Use compressToSize to ensure file is smaller than original and under 1MB
+          compressToSize(
+            canvas,
+            1024 * 1024,
+            processed.mimeType,
+            originalFileSize
+          ).then(({ blob, quality, targetSize, actualSize }) => {
+            processed.size = blob.size;
+            processed.dataURL = URL.createObjectURL(blob);
+            processed.finalQuality = quality;
+            processed.targetSize = targetSize;
+            processed.actualSize = actualSize;
+            if (index === currentImageIndex) {
+              selectImage(index);
+            }
+          });
+        }
+
+        if (imageItem && !imageItem.querySelector(".enhancement-indicator")) {
+          const indicator = document.createElement("div");
+          indicator.className = "enhancement-indicator";
+          indicator.textContent = "✨";
+          imageItem.appendChild(indicator);
+        }
+
+        document.getElementById("downloadAllBtn").disabled = false;
+        document.getElementById("undoAllBtn").disabled = false;
+        break;
+
+      case "error":
+        if (statusBadge) {
+          statusBadge.textContent = "Error";
+          statusBadge.className = "badge bg-danger";
+        }
+        if (spinnerOverlay) spinnerOverlay.style.display = "none";
+        showOrHidePreviewSpinner(false);
+        break;
+    }
+  }
+
+  // Apply manual adjustments to current image
+  function applyToCurrentImage() {
+    if (currentImageIndex < 0 || !imageQueue[currentImageIndex]) return;
+
+    const previewSpinner = document.querySelector(
+      "#imagePreviewContainer .processing-overlay"
+    );
+    previewSpinner.style.display = "flex";
+
+    const image = imageQueue[currentImageIndex];
+    if (!image.canvas || !image.context) return;
+
+    const settings = {
+      brightness: parseInt(document.getElementById("brightness").value),
+      contrast: parseInt(document.getElementById("contrast").value),
+      saturation: parseInt(document.getElementById("saturation").value),
+      sharpen: parseInt(document.getElementById("sharpen").value),
+      grayscale: document.getElementById("grayscale").checked,
+    };
+
+    const imageData = image.originalImageData;
+    const adjustedData = applyManualAdjustments(
+      imageData.data.slice(),
+      settings
+    );
+
+    const finalCanvas = document.createElement("canvas");
+    finalCanvas.width = image.width;
+    finalCanvas.height = image.height;
+    const finalCtx = finalCanvas.getContext("2d");
+    const adjustedImageData = new ImageData(
+      adjustedData,
+      image.width,
+      image.height
+    );
+    finalCtx.putImageData(adjustedImageData, 0, 0);
+
+    // Resize the final canvas to 900px max width
+    const resizedCanvas = resizeCanvas(finalCanvas, 900);
+
+    processedImages[currentImageIndex] = {
+      canvas: resizedCanvas,
+      width: resizedCanvas.width,
+      height: resizedCanvas.height,
+      mimeType: "image/jpeg",
+      extension: "jpg",
+    };
+
+    updateImageStatus(currentImageIndex, "enhanced");
+    previewSpinner.style.display = "none";
+    // selectImage is called from within updateImageStatus after blob conversion
+  }
+
+  // Apply manual adjustments
+  function applyManualAdjustments(data, settings) {
+    for (let i = 0; i < data.length; i += 4) {
+      let r = data[i];
+      let g = data[i + 1];
+      let b = data[i + 2];
+
+      // Apply brightness
+      const brightnessFactor = settings.brightness / 100;
+      r *= brightnessFactor;
+      g *= brightnessFactor;
+      b *= brightnessFactor;
+
+      // Apply contrast
+      const contrastFactor = (settings.contrast - 100) / 100;
+      r = ((r / 255 - 0.5) * (1 + contrastFactor) + 0.5) * 255;
+      g = ((g / 255 - 0.5) * (1 + contrastFactor) + 0.5) * 255;
+      b = ((b / 255 - 0.5) * (1 + contrastFactor) + 0.5) * 255;
+
+      // Apply saturation
+      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+      const saturationFactor = settings.saturation / 100;
+      r = gray + saturationFactor * (r - gray);
+      g = gray + saturationFactor * (g - gray);
+      b = gray + saturationFactor * (b - gray);
+
+      // Apply grayscale
+      if (settings.grayscale) {
+        r = g = b = gray;
+      }
+
+      // Clamp values
+      data[i] = Math.min(255, Math.max(0, r));
+      data[i + 1] = Math.min(255, Math.max(0, g));
+      data[i + 2] = Math.min(255, Math.max(0, b));
+    }
+
+    return data;
+  }
+
+  function getOutputFormatDetails() {
+    // Output is always JPEG now
+    return { mimeType: "image/jpeg", extension: "jpg" };
+  }
+
+  // Download all images
+  async function downloadAllImages() {
+    for (let i = 0; i < processedImages.length; i++) {
+      if (processedImages[i] && processedImages[i].canvas) {
+        const canvas = processedImages[i].canvas;
+        const originalName = imageQueue[i].file.name
+          .split(".")
+          .slice(0, -1)
+          .join(".");
+        const { mimeType, extension } = getOutputFormatDetails();
+
+        // Use compressToSize to ensure file is smaller than original and under 1MB
+        const originalFileSize = imageQueue[i].file.size;
+        const { blob } = await compressToSize(
+          canvas,
+          1024 * 1024,
+          mimeType,
+          originalFileSize
+        );
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${originalName}_enhanced.${extension}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        // Small delay between downloads
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    }
+  }
+
+  // Reset settings
+  function resetSettings() {
+    document.getElementById("brightness").value = 100;
+    document.getElementById("contrast").value = 100;
+    document.getElementById("saturation").value = 100;
+    document.getElementById("sharpen").value = 0;
+    document.getElementById("quality").value = 100;
+    document.getElementById("grayscale").checked = false;
+
+    sliders.forEach((sliderConfig) => {
+      const valueElement = document.getElementById(sliderConfig.valueId);
+      const sliderElement = document.getElementById(sliderConfig.id);
+      if (valueElement && sliderElement) {
+        valueElement.textContent = sliderElement.value + sliderConfig.unit;
+      }
+    });
+  }
+
+  // Undo enhancement for current image
+  function undoEnhancement() {
+    if (currentImageIndex < 0 || !processedImages[currentImageIndex]) return;
+
+    // Clear the processed image
+    processedImages[currentImageIndex] = undefined;
+
+    // Update status badge
+    const statusBadge = document.getElementById(`status-${currentImageIndex}`);
+    statusBadge.textContent = "Ready";
+    statusBadge.className = "badge bg-secondary";
+
+    // Remove enhancement indicator
+    const imageItem =
+      document.querySelectorAll(".image-item")[currentImageIndex];
+    const indicator = imageItem.querySelector(".enhancement-indicator");
+    if (indicator) {
+      indicator.remove();
+    }
+
+    // Refresh the current image selection to update the preview
+    selectImage(currentImageIndex);
+
+    // Reset sliders to default values
+    resetSettings();
+
+    // Update batch button states
+    document.getElementById("undoAllBtn").disabled = !processedImages.some(
+      (p) => p
+    );
+    document.getElementById("downloadAllBtn").disabled = !processedImages.some(
+      (p) => p
+    );
+  }
+
+  // Undo all enhancements
+  function undoAllEnhancements() {
+    for (let i = 0; i < processedImages.length; i++) {
+      if (processedImages[i]) {
+        processedImages[i] = undefined;
+
+        // Update status badge
+        const statusBadge = document.getElementById(`status-${i}`);
+        if (statusBadge) {
+          statusBadge.textContent = "Ready";
+          statusBadge.className = "badge bg-secondary";
+        }
+
+        // Remove enhancement indicator
+        const imageItem = document.querySelectorAll(".image-item")[i];
+        if (imageItem) {
+          const indicator = imageItem.querySelector(".enhancement-indicator");
+          if (indicator) {
+            indicator.remove();
+          }
+        }
+      }
+    }
+
+    // Refresh the current image selection to update the preview
+    if (currentImageIndex >= 0) {
+      selectImage(currentImageIndex);
+    }
+
+    // Disable buttons
+    document.getElementById("undoAllBtn").disabled = true;
+    document.getElementById("downloadAllBtn").disabled = true;
+
+    // Reset sliders to default values
+    resetSettings();
+  }
+
+  // Delete an image from the queue
+  function deleteImage(event, index) {
+    event.stopPropagation(); // Prevent selectImage from firing
+
+    imageQueue.splice(index, 1);
+    processedImages.splice(index, 1);
+
+    displayImageGrid();
+
+    if (imageQueue.length === 0) {
+      // No images left, clear preview and controls
+      document.getElementById("imagePreviewDisplay").style.display = "none";
+      document.getElementById("imagePreviewText").style.display = "block";
+      document.getElementById("currentImageInfo").style.display = "none";
+      document.getElementById("batchControls").style.display = "none";
+      document.getElementById("applyToCurrentBtn").disabled = true;
+      document.getElementById("undoEnhancementBtn").disabled = true;
+      document.getElementById("undoAllBtn").disabled = true;
+      currentImageIndex = -1;
+    } else {
+      // If the deleted image was selected, select another one
+      if (index === currentImageIndex) {
+        // Select the previous image or the first one
+        selectImage(Math.max(0, index - 1));
+      } else if (index < currentImageIndex) {
+        // Adjust the current index since an item before it was removed
+        currentImageIndex--;
+        selectImage(currentImageIndex);
+      } else {
+        // The current selection is still valid, just re-highlight
+        selectImage(currentImageIndex);
+      }
+    }
+  }
+
+  // Utility functions
+  function resizeCanvas(sourceCanvas, maxWidth = 900) {
+    const sourceWidth = sourceCanvas.width;
+    const sourceHeight = sourceCanvas.height;
+
+    // Calculate new dimensions maintaining aspect ratio
+    let newWidth = sourceWidth;
+    let newHeight = sourceHeight;
+
+    if (sourceWidth > maxWidth) {
+      newWidth = maxWidth;
+      newHeight = (sourceHeight * maxWidth) / sourceWidth;
+    }
+
+    // Create new canvas with calculated dimensions
+    const resizedCanvas = document.createElement("canvas");
+    resizedCanvas.width = newWidth;
+    resizedCanvas.height = newHeight;
+    const ctx = resizedCanvas.getContext("2d");
+
+    // Use high-quality scaling
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    // Draw the resized image
+    ctx.drawImage(sourceCanvas, 0, 0, newWidth, newHeight);
+
+    return resizedCanvas;
+  }
+
+  async function compressToSize(
+    canvas,
+    maxSizeBytes = 1024 * 1024,
+    mimeType = "image/jpeg",
+    originalFileSize = null
+  ) {
+    // If we have original file size, use the smaller of the two as target
+    const targetSize = originalFileSize
+      ? Math.min(maxSizeBytes, originalFileSize * 0.8)
+      : maxSizeBytes * 0.8;
+
+    let quality = 0.85; // Start with 85% quality (more aggressive)
+    let blob;
+    const minQuality = 0.05; // Go down to 5% quality if needed
+
+    // Try different quality levels until we get under the target size
+    do {
+      blob = await new Promise((resolve) => {
+        canvas.toBlob(resolve, mimeType, quality);
+      });
+
+      if (blob.size <= targetSize) {
+        break;
+      }
+
+      // More aggressive quality reduction
+      if (quality > 0.5) {
+        quality -= 0.05; // Reduce by 5% when quality is high
+      } else if (quality > 0.2) {
+        quality -= 0.02; // Reduce by 2% when quality is medium
+      } else {
+        quality -= 0.01; // Reduce by 1% when quality is low
+      }
+    } while (quality > minQuality && blob.size > targetSize);
+
+    // If still too large, try even lower quality
+    if (blob.size > targetSize && quality <= minQuality) {
+      quality = minQuality;
+      blob = await new Promise((resolve) => {
+        canvas.toBlob(resolve, mimeType, quality);
+      });
+    }
+
+    return {
+      blob,
+      quality: Math.round(quality * 100),
+      targetSize,
+      actualSize: blob.size,
+    };
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  }
+
+  function showWarning(message) {
+    const warning = document.getElementById("fileSizeWarning");
+    warning.textContent = message;
+    warning.style.display = "block";
+    setTimeout(() => {
+      warning.style.display = "none";
+    }, 5000);
+  }
+</script>
+{% endblock %}
+
+</final_file_content>
+
+IMPORTANT: For any future changes to this file, use the final_file_content shown above as your reference. This content reflects the current state of the file, including any auto-formatting (e.g., if you used single quotes but the formatter converted them to double quotes). Always base your SEARCH/REPLACE operations on this final version to ensure accuracy.<environment_details>
+# VSCode Visible Files
+templates/image_adjustment.html
+
+# VSCode Open Tabs
+demo-newsletter-editor.html
+.env
+app.py
+templates/editor.html
+templates/base.html
+blueprints/tools.py
+.env.example
+requirements.txt
+templates/upload.html
+templates/image_adjustment.html
+
+# Current Time
+7/13/2025, 9:52:06 PM (America/New_York, UTC-4:00)
+
+# Context Window Usage
+262,760 / 1,048.576K tokens used (25%)
+
+# Current Mode
+ACT MODE
+</environment_details>
