@@ -5,6 +5,7 @@ import cloudinary.api
 import os
 import requests
 from urllib.parse import unquote
+from datetime import datetime
 
 newsletter_bp = Blueprint('newsletter', __name__)
 
@@ -32,10 +33,18 @@ def upload_file():
         return redirect(request.url)
     if file:
         try:
+            # Get current date for folder structure
+            current_date = datetime.now()
+            year = current_date.strftime('%Y')
+            month = current_date.strftime('%B')
+            
+            # Create folder path: newsletters/YYYY/MMMM/
+            folder_path = f"newsletters/{year}/{month}"
+            
             result = cloudinary.uploader.upload(
                 file,
                 resource_type="raw",
-                public_id=f"newsletters/{file.filename}"
+                public_id=f"{folder_path}/{file.filename}"
             )
             flash('File successfully uploaded')
             return redirect(url_for('newsletter.upload'))
