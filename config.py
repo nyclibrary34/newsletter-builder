@@ -19,6 +19,9 @@ class Config:
 
     # Browserless configuration (optional)
     BROWSERLESS_TOKEN = os.environ.get('BROWSERLESS_TOKEN')
+    
+    # Juice server configuration
+    JUICE_SERVER_URL = os.environ.get('JUICE_SERVER_URL', 'http://localhost:3000')
 
     @staticmethod
     def init_app(app):
