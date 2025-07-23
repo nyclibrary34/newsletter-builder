@@ -56,7 +56,8 @@ def upload_file():
 def edit_file(file_id):
     """Edit a newsletter file in the editor"""
     cloud_name = current_app.config['CLOUDINARY_CLOUD_NAME']
-    return render_template('editor.html', file_id=file_id, cloud_name=cloud_name)
+    juice_server_url = current_app.config['JUICE_SERVER_URL']
+    return render_template('editor.html', file_id=file_id, cloud_name=cloud_name, juice_server_url=juice_server_url)
 
 @newsletter_bp.route('/delete/<path:file_id>')
 def delete_file(file_id):
