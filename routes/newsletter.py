@@ -6,6 +6,7 @@ import os
 import requests
 from urllib.parse import unquote
 from datetime import datetime
+from utils.storage import StorageManager
 
 newsletter_bp = Blueprint('newsletter', __name__)
 
@@ -17,9 +18,9 @@ def index():
 @newsletter_bp.route('/newsletter-upload')
 def upload():
     """Main newsletter upload page"""
-    files = cloudinary.api.resources(
-        type="upload", resource_type="raw", prefix="newsletters/")
-    return render_template('upload.html', files=files['resources'])
+    storage = StorageManager()
+    files = storage.list_files("newsletters/")
+    return render_template('upload.html', files=files)
 
 @newsletter_bp.route('/newsletter-upload', methods=['POST'])
 def upload_file():
@@ -33,20 +34,14 @@ def upload_file():
         return redirect(request.url)
     if file:
         try:
-            # Get current date for folder structure
-            current_date = datetime.now()
-            year = current_date.strftime('%Y')
-            month = current_date.strftime('%B')
+            storage = StorageManager()
+            result = storage.upload(file, file.filename)
             
-            # Create folder path: newsletters/YYYY/MMMM/
-            folder_path = f"newsletters/{year}/{month}"
+            if result['success']:
+                flash('File successfully uploaded')
+            else:
+                flash(f"Upload failed: {result.get('error', 'Unknown error')}")
             
-            result = cloudinary.uploader.upload(
-                file,
-                resource_type="raw",
-                public_id=f"{folder_path}/{file.filename}"
-            )
-            flash('File successfully uploaded')
             return redirect(url_for('newsletter.upload'))
         except Exception as e:
             flash(f"An error occurred: {e}")
@@ -57,14 +52,40 @@ def edit_file(file_id):
     """Edit a newsletter file in the editor"""
     cloud_name = current_app.config['CLOUDINARY_CLOUD_NAME']
     juice_server_url = current_app.config['JUICE_SERVER_URL']
-    return render_template('editor.html', file_id=file_id, cloud_name=cloud_name, juice_server_url=juice_server_url)
+    storage_type = current_app.config['STORAGE_TYPE']
+    return render_template('editor.html', file_id=file_id, cloud_name=cloud_name, juice_server_url=juice_server_url, storage_type=storage_type)
+
+@newsletter_bp.route('/content/<path:file_id>')
+def get_file_content(file_id):
+    """Get file content for editing (supports both local and cloud storage)"""
+    try:
+        storage = StorageManager()
+        content = storage.download(file_id)
+        
+        # Return content as plain text for the editor
+        return Response(
+            content,
+            mimetype='text/html',
+            headers={
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
+        )
+    except FileNotFoundError:
+        return "File not found", 404
+    except Exception as e:
+        return f"Error loading file: {str(e)}", 500
 
 @newsletter_bp.route('/delete/<path:file_id>')
 def delete_file(file_id):
     """Delete a newsletter file"""
     try:
-        cloudinary.uploader.destroy(file_id, resource_type="raw")
-        flash('File successfully deleted')
+        storage = StorageManager()
+        if storage.delete(file_id):
+            flash('File successfully deleted')
+        else:
+            flash('Failed to delete file')
     except Exception as e:
         flash(f"An error occurred: {e}")
     return redirect(url_for('newsletter.upload'))
@@ -73,12 +94,8 @@ def delete_file(file_id):
 def download_file(file_id):
     """Download a newsletter file"""
     try:
-        # Get the Cloudinary URL
-        url = cloudinary.utils.cloudinary_url(file_id, resource_type="raw")[0]
-        
-        # Fetch the file from Cloudinary
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
+        storage = StorageManager()
+        content = storage.download(file_id)
         
         # Extract filename from file_id
         filename = file_id.split('/')[-1]
@@ -99,14 +116,8 @@ def download_file(file_id):
         elif filename.lower().endswith('.js'):
             content_type = 'application/javascript'
         
-        # Create a Flask response with proper headers
-        def generate():
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    yield chunk
-        
         return Response(
-            generate(),
+            content,
             mimetype=content_type,
             headers={
                 'Content-Disposition': f'attachment; filename="{filename}"',
@@ -117,8 +128,8 @@ def download_file(file_id):
             }
         )
         
-    except requests.RequestException as e:
-        flash(f"Error downloading file: {str(e)}")
+    except FileNotFoundError:
+        flash("File not found")
         return redirect(url_for('newsletter.upload'))
     except Exception as e:
         flash(f"An error occurred: {str(e)}")
@@ -129,14 +140,12 @@ def save_file(file_id):
     """Save newsletter file content"""
     try:
         data = request.data
-        cloudinary.uploader.upload(
-            data,
-            public_id=file_id,
-            resource_type="raw",
-            overwrite=True,
-            invalidate=True
-        )
-        return "File saved successfully", 200
+        storage = StorageManager()
+        
+        if storage.save(file_id, data):
+            return "File saved successfully", 200
+        else:
+            return "Failed to save file", 500
     except Exception as e:
         return str(e), 500
 

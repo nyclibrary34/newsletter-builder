@@ -27,13 +27,17 @@ def create_app():
     # Load configuration
     env = os.environ.get('FLASK_ENV', 'development')
     app.config.from_object(config[env])
+    
+    # Initialize configuration
+    config[env].init_app(app)
 
-    # Initialize Cloudinary
-    cloudinary.config(
-        cloud_name=app.config['CLOUDINARY_CLOUD_NAME'],
-        api_key=app.config['CLOUDINARY_API_KEY'],
-        api_secret=app.config['CLOUDINARY_API_SECRET']
-    )
+    # Initialize Cloudinary only if using cloudinary storage
+    if app.config.get('STORAGE_TYPE', 'cloudinary').lower() == 'cloudinary':
+        cloudinary.config(
+            cloud_name=app.config['CLOUDINARY_CLOUD_NAME'],
+            api_key=app.config['CLOUDINARY_API_KEY'],
+            api_secret=app.config['CLOUDINARY_API_SECRET']
+        )
 
     # Register blueprints
     app.register_blueprint(main_bp)

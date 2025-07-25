@@ -1,0 +1,2 @@
+# This file ensures the static/files directory is tracked by git
+# Local newsletter files will be stored in subdirectories here

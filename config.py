@@ -12,7 +12,7 @@ class Config:
     DEBUG = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     PORT = int(os.environ.get('FLASK_PORT', 5000))
 
-    # Cloudinary configuration
+    # Cloudinary configuration (only required if using cloudinary storage)
     CLOUDINARY_CLOUD_NAME = os.environ.get('CLOUDINARY_CLOUD_NAME')
     CLOUDINARY_API_KEY = os.environ.get('CLOUDINARY_API_KEY')
     CLOUDINARY_API_SECRET = os.environ.get('CLOUDINARY_API_SECRET')
@@ -23,10 +23,29 @@ class Config:
     # Juice server configuration
     JUICE_SERVER_URL = os.environ.get('JUICE_SERVER_URL', 'http://localhost:3000')
 
+    # Storage configuration
+    STORAGE_TYPE = os.environ.get('STORAGE_TYPE', 'cloudinary')  # 'local' or 'cloudinary'
+    LOCAL_STORAGE_PATH = os.environ.get('LOCAL_STORAGE_PATH', 'static/files')
+
     @staticmethod
     def init_app(app):
         """Initialize application with configuration"""
-        pass
+        # Validate Cloudinary credentials if using cloudinary storage
+        storage_type = app.config.get('STORAGE_TYPE', 'cloudinary').lower()
+        if storage_type == 'cloudinary':
+            missing_credentials = []
+            if not app.config.get('CLOUDINARY_CLOUD_NAME'):
+                missing_credentials.append('CLOUDINARY_CLOUD_NAME')
+            if not app.config.get('CLOUDINARY_API_KEY'):
+                missing_credentials.append('CLOUDINARY_API_KEY')
+            if not app.config.get('CLOUDINARY_API_SECRET'):
+                missing_credentials.append('CLOUDINARY_API_SECRET')
+            
+            if missing_credentials:
+                raise ValueError(
+                    f"Missing required Cloudinary credentials for cloudinary storage: {', '.join(missing_credentials)}. "
+                    f"Either set these environment variables or change STORAGE_TYPE to 'local' in your .env file."
+                )
 
 
 class DevelopmentConfig(Config):
