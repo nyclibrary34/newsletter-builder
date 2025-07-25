@@ -84,7 +84,11 @@ nano .env
 
 Required environment variables:
 ```bash
-# Cloudinary Configuration (Required)
+# Storage Configuration (Required)
+STORAGE_TYPE=cloudinary  # Options: 'local' or 'cloudinary'
+LOCAL_STORAGE_PATH=static/files  # Only needed if using local storage
+
+# Cloudinary Configuration (Required if using cloudinary storage)
 CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
 CLOUDINARY_API_SECRET=your_cloudinary_api_secret
@@ -143,12 +147,16 @@ Configure these in your Vercel dashboard:
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `CLOUDINARY_CLOUD_NAME` | Your Cloudinary cloud name | ✅ |
-| `CLOUDINARY_API_KEY` | Your Cloudinary API key | ✅ |
-| `CLOUDINARY_API_SECRET` | Your Cloudinary API secret | ✅ |
+| `STORAGE_TYPE` | Storage backend ('local' or 'cloudinary') | ✅ |
+| `LOCAL_STORAGE_PATH` | Local storage path (if using local storage) | ❌ |
+| `CLOUDINARY_CLOUD_NAME` | Your Cloudinary cloud name | ✅* |
+| `CLOUDINARY_API_KEY` | Your Cloudinary API key | ✅* |
+| `CLOUDINARY_API_SECRET` | Your Cloudinary API secret | ✅* |
 | `FLASK_SECRET_KEY` | Flask session security key | ✅ |
 | `BROWSERLESS_TOKEN` | Browserless.io API token | ❌ |
 | `FLASK_ENV` | Set to `production` | ✅ |
+
+*Required only if `STORAGE_TYPE=cloudinary`
 
 ### Alternative Deployment Platforms
 
@@ -181,6 +189,37 @@ The application can also be deployed on:
 3. **JPG Compression**: Compress JPEG images with quality control
 
 ## 🔧 Configuration
+
+### Storage Configuration
+The application supports two storage backends that can be configured via the `STORAGE_TYPE` environment variable:
+
+#### Local Storage (`STORAGE_TYPE=local`)
+- **Files stored**: In the `static/files/` directory within your application
+- **Best for**: Development, small deployments, or when you want full control over files
+- **Benefits**: No external dependencies, direct file system access, easier debugging
+- **Considerations**: Files are tied to the server instance, no CDN acceleration
+
+#### Cloudinary Storage (`STORAGE_TYPE=cloudinary`)
+- **Files stored**: In Cloudinary's cloud service with CDN delivery
+- **Best for**: Production deployments, scalable applications
+- **Benefits**: Global CDN, automatic optimization, unlimited scalability
+- **Requirements**: Cloudinary account and API credentials
+
+#### Configuration Examples
+
+**For Local Storage:**
+```bash
+STORAGE_TYPE=local
+LOCAL_STORAGE_PATH=static/files  # Optional, defaults to static/files
+```
+
+**For Cloudinary Storage:**
+```bash
+STORAGE_TYPE=cloudinary
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+```
 
 ### Cloudinary Setup
 1. Create account at [cloudinary.com](https://cloudinary.com)
@@ -252,11 +291,29 @@ pip install -r api/requirements.txt
 python --version  # Should be 3.11+
 ```
 
-#### Cloudinary Connection Issues
+#### Storage Configuration Issues
 ```bash
+# For Local Storage issues:
+# Ensure static/files directory exists and is writable
+ls -la static/files/
+chmod 755 static/files/
+
+# For Cloudinary issues:
 # Verify credentials in .env file
 # Check Cloudinary dashboard for quota limits
 # Ensure API credentials have proper permissions
+```
+
+#### File Upload/Download Issues
+```bash
+# Check storage type configuration
+echo $STORAGE_TYPE
+
+# For local storage, verify file permissions
+ls -la static/files/newsletters/
+
+# For Cloudinary, test API connection
+python -c "import cloudinary; print('Cloudinary configured')"
 ```
 
 #### PDF Conversion Failures

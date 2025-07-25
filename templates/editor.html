@@ -466,12 +466,12 @@ JavaScript APIs Used:
   // EDITOR READY EVENT - Load existing content when editor initializes
   // ========================================================================
   editor.onReady(function () {
-    // --- Load Existing Newsletter Content from Cloudinary ---
+    // --- Load Existing Newsletter Content from Storage ---
     const fileId = "{{ file_id }}";              // Get file identifier from template
     if (fileId) {
-      // --- Fetch Content from Cloudinary CDN ---
+      // --- Fetch Content from Storage Backend ---
       fetch(
-        `https://res.cloudinary.com/{{ cloud_name }}/raw/upload/${fileId}?_=${new Date().getTime()}`
+        `/content/${fileId}?_=${new Date().getTime()}`
       )
         .then((response) => {
           if (!response.ok) {
