@@ -51,9 +51,8 @@ def upload_file():
 def edit_file(file_id):
     """Edit a newsletter file in the editor"""
     cloud_name = current_app.config['CLOUDINARY_CLOUD_NAME']
-    juice_server_url = current_app.config['JUICE_SERVER_URL']
     storage_type = current_app.config['STORAGE_TYPE']
-    return render_template('editor.html', file_id=file_id, cloud_name=cloud_name, juice_server_url=juice_server_url, storage_type=storage_type)
+    return render_template('editor.html', file_id=file_id, cloud_name=cloud_name, storage_type=storage_type)
 
 @newsletter_bp.route('/content/<path:file_id>')
 def get_file_content(file_id):

@@ -202,10 +202,10 @@ JavaScript APIs Used:
 <!-- ========================================================================
      LOADING SPINNER OVERLAY
      ======================================================================== -->
-<!-- Loading overlay for juice server processing -->
+<!-- Loading overlay for HTML processing -->
 <div id="loading-overlay" class="loading-overlay">
   <div class="spinner"></div>
-  <div class="loading-text">Processing HTML with Juice Server...</div>
+  <div class="loading-text">Processing HTML (inlining CSS and cleaning IDs)...</div>
 </div>
 
 <!-- ========================================================================
@@ -227,6 +227,9 @@ JavaScript APIs Used:
 
 <!-- Newsletter Preset: Pre-configured components and styles for email templates -->
 <script src="https://unpkg.com/grapesjs-preset-newsletter@1.0.1"></script>
+
+<!-- HTML Processor: Client-side CSS inlining and ID cleanup (replaces juice server) -->
+<script src="{{ url_for('static', filename='js/html-processor.js') }}"></script>
 
 <!-- ========================================================================
      GRAPESJS EDITOR INITIALIZATION AND CONFIGURATION
@@ -370,7 +373,7 @@ JavaScript APIs Used:
   ]);
 
   // ========================================================================
-  // EXPORT HTML COMMAND - Process with Juice Server and download
+  // EXPORT HTML COMMAND - Process with client-side HTML processor and download
   // ========================================================================
   cmdm.add("export-html", {
     run: async function (editor, sender) {
@@ -391,32 +394,16 @@ JavaScript APIs Used:
         // --- Prepare File Information ---
         const fileId = "{{ file_id }}";             // File identifier from template
         const fileName = fileId.split("/").pop();   // Extract filename from path
-        const juiceServerUrl = "{{ juice_server_url }}";  // Juice server URL from Flask config
         
-        // --- Send to Juice Server for Processing ---
-        const response = await fetch(`${juiceServerUrl}/process-download`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'text/html',
-            'X-Filename': fileName
-          },
-          body: fullHtml
-        });
+        // --- Process HTML with Client-side Processor ---
+        // Add small delay to show loading spinner
+        await new Promise(resolve => setTimeout(resolve, 100));
         
-        if (!response.ok) {
-          throw new Error(`Juice server error: ${response.status} ${response.statusText}`);
+        const result = window.HTMLProcessor.processAndDownload(fullHtml, fileName);
+        
+        if (!result.success) {
+          throw new Error(result.error);
         }
-        
-        // --- Get Processed HTML as Blob ---
-        const processedBlob = await response.blob();
-        
-        // --- Create and Trigger Download ---
-        const url = URL.createObjectURL(processedBlob);  // Create download URL
-        const a = document.createElement("a");            // Create invisible download link
-        a.href = url;                                     // Set download URL
-        a.download = fileName;                            // Set download filename
-        a.click();                                        // Trigger download
-        URL.revokeObjectURL(url);                         // Clean up URL
         
         // --- Hide Loading Overlay ---
         loadingOverlay.classList.remove('show');
@@ -439,7 +426,7 @@ JavaScript APIs Used:
         Swal.fire({
           icon: 'error',
           title: 'Export Failed!',
-          text: `Failed to process HTML: ${error.message}. Please ensure the Juice server is running.`,
+          text: `Failed to process HTML: ${error.message}`,
           confirmButtonColor: '#d33'
         });
       }
