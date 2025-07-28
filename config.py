@@ -24,6 +24,10 @@ class Config:
     STORAGE_TYPE = os.environ.get('STORAGE_TYPE', 'cloudinary')  # 'local' or 'cloudinary'
     LOCAL_STORAGE_PATH = os.environ.get('LOCAL_STORAGE_PATH', 'static/files')
 
+    # Sentry configuration (development/staging only)
+    SENTRY_DSN = os.environ.get('SENTRY_DSN')
+    ENABLE_SENTRY = os.environ.get('ENABLE_SENTRY', 'false').lower() == 'true'
+
     @staticmethod
     def init_app(app):
         """Initialize application with configuration"""

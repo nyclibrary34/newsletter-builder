@@ -71,6 +71,9 @@ cd grapesjs-newsletter-editor
 ```bash
 # Install Python dependencies
 pip install -r api/requirements.txt
+
+# Install development dependencies (includes Sentry monitoring, testing tools, etc.)
+pip install -r requirements-dev.txt
 ```
 
 ### 3. Environment Configuration
@@ -99,6 +102,10 @@ FLASK_SECRET_KEY=your_generated_secret_key_here
 # Optional Services
 BROWSERLESS_TOKEN=your_browserless_token_here
 FLASK_ENV=development
+
+# Development Only - Sentry Error Monitoring
+SENTRY_DSN=your_sentry_dsn_here  # Only for development/staging
+ENABLE_SENTRY=false  # Set to true to activate monitoring
 ```
 
 ### 4. Generate Flask Secret Key
@@ -232,6 +239,33 @@ CLOUDINARY_API_SECRET=your_api_secret
 2. Generate API token
 3. Add token to environment variables
 4. Fallback to local Playwright if not configured
+
+### Sentry Error Monitoring (Development Only)
+Sentry provides real-time error tracking and performance monitoring for development and staging environments.
+
+**Important**: Sentry is a **development dependency only** and should not be deployed to production.
+
+1. Create account at [sentry.io](https://sentry.io)
+2. Create a new Flask project
+3. Copy the DSN from your project settings
+4. Install development dependencies: `pip install -r requirements-dev.txt`
+5. Configure environment variables:
+   ```bash
+   SENTRY_DSN=your_sentry_dsn_here
+   ENABLE_SENTRY=true
+   ```
+
+**Benefits**:
+- Real-time error tracking and alerts
+- Performance monitoring and insights
+- Release tracking and deployment monitoring
+- User feedback and crash reports
+
+**Development vs Production**:
+- ✅ Use in development, testing, and staging environments
+- ❌ Do not include in production deployments
+- ❌ Not included in `api/requirements.txt` (production dependencies)
+- ✅ Available in `requirements-dev.txt` (development dependencies)
 
 ### Flask Configuration
 The application supports multiple environments:
