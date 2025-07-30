@@ -1,0 +1,24 @@
+# Development Dependencies
+# Install with: pip install -r api/requirements.txt -r requirements-dev.txt
+
+# Error Monitoring (Development/Staging) - Works with GlitchTip
+sentry-sdk[flask]==2.19.2
+
+# Testing
+pytest==7.4.0
+pytest-flask==1.2.0
+pytest-cov==4.1.0
+
+# Code Quality
+black==23.7.0
+flake8==6.0.0
+mypy==1.5.0
+isort==5.12.0
+
+# Development Tools
+pre-commit==3.3.0
+python-dotenv==1.0.0
+
+# Type Hints
+types-requests==2.31.0.2
+types-pillow==10.0.0.3

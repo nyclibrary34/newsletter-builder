@@ -136,45 +136,6 @@ JavaScript APIs Used:
     min-width: 80px;                    /* Match back button width for balance */
   }
 
-  /* ===== LOADING SPINNER OVERLAY ===== */
-  .loading-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.7);
-    display: none;
-    justify-content: center;
-    align-items: center;
-    z-index: 9999;
-    flex-direction: column;
-  }
-
-  .loading-overlay.show {
-    display: flex;
-  }
-
-  .spinner {
-    width: 50px;
-    height: 50px;
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #3498db;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin-bottom: 20px;
-  }
-
-  .loading-text {
-    color: white;
-    font-size: 18px;
-    font-weight: 500;
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
 </style>
 {% endblock %} 
 
@@ -199,14 +160,6 @@ JavaScript APIs Used:
   <div class="header-spacer"></div>
 </div>
 
-<!-- ========================================================================
-     LOADING SPINNER OVERLAY
-     ======================================================================== -->
-<!-- Loading overlay for juice server processing -->
-<div id="loading-overlay" class="loading-overlay">
-  <div class="spinner"></div>
-  <div class="loading-text">Processing HTML with Juice Server...</div>
-</div>
 
 <!-- ========================================================================
      GRAPESJS EDITOR CONTAINER
@@ -227,6 +180,9 @@ JavaScript APIs Used:
 
 <!-- Newsletter Preset: Pre-configured components and styles for email templates -->
 <script src="https://unpkg.com/grapesjs-preset-newsletter@1.0.1"></script>
+
+<!-- HTML Processor: Client-side CSS inlining and ID cleanup (replaces juice server) -->
+<script src="{{ url_for('static', filename='js/html-processor.js') }}"></script>
 
 <!-- ========================================================================
      GRAPESJS EDITOR INITIALIZATION AND CONFIGURATION
@@ -370,15 +326,11 @@ JavaScript APIs Used:
   ]);
 
   // ========================================================================
-  // EXPORT HTML COMMAND - Process with Juice Server and download
+  // EXPORT HTML COMMAND - Process with client-side HTML processor and download
   // ========================================================================
   cmdm.add("export-html", {
     run: async function (editor, sender) {
       sender.set("active", 0);                    // Deactivate button after click
-      
-      // --- Show Loading Overlay ---
-      const loadingOverlay = document.getElementById('loading-overlay');
-      loadingOverlay.classList.add('show');
       
       try {
         // --- Extract Content from Editor ---
@@ -391,35 +343,14 @@ JavaScript APIs Used:
         // --- Prepare File Information ---
         const fileId = "{{ file_id }}";             // File identifier from template
         const fileName = fileId.split("/").pop();   // Extract filename from path
-        const juiceServerUrl = "{{ juice_server_url }}";  // Juice server URL from Flask config
         
-        // --- Send to Juice Server for Processing ---
-        const response = await fetch(`${juiceServerUrl}/process-download`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'text/html',
-            'X-Filename': fileName
-          },
-          body: fullHtml
-        });
+        // --- Process HTML with Client-side Processor ---
         
-        if (!response.ok) {
-          throw new Error(`Juice server error: ${response.status} ${response.statusText}`);
+        const result = window.HTMLProcessor.processAndDownload(fullHtml, fileName);
+        
+        if (!result.success) {
+          throw new Error(result.error);
         }
-        
-        // --- Get Processed HTML as Blob ---
-        const processedBlob = await response.blob();
-        
-        // --- Create and Trigger Download ---
-        const url = URL.createObjectURL(processedBlob);  // Create download URL
-        const a = document.createElement("a");            // Create invisible download link
-        a.href = url;                                     // Set download URL
-        a.download = fileName;                            // Set download filename
-        a.click();                                        // Trigger download
-        URL.revokeObjectURL(url);                         // Clean up URL
-        
-        // --- Hide Loading Overlay ---
-        loadingOverlay.classList.remove('show');
         
         // --- Show Success Feedback ---
         Swal.fire({
@@ -431,15 +362,12 @@ JavaScript APIs Used:
         });
         
       } catch (error) {
-        // --- Hide Loading Overlay ---
-        loadingOverlay.classList.remove('show');
-        
         // --- Show Error Feedback ---
         console.error('Export error:', error);
         Swal.fire({
           icon: 'error',
           title: 'Export Failed!',
-          text: `Failed to process HTML: ${error.message}. Please ensure the Juice server is running.`,
+          text: `Failed to process HTML: ${error.message}`,
           confirmButtonColor: '#d33'
         });
       }
