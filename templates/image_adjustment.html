@@ -577,7 +577,7 @@ endblock %} {% block extra_css %}
 
   // Constants
   const MAX_IMAGES = 10;
-  const MAX_TOTAL_SIZE = 5 * 1024 * 1024; // 5MB for Vercel
+  const MAX_TOTAL_SIZE = 50 * 1024 * 1024; // 50MB limit
   const WORKER_SCRIPT = `
   self.onmessage = function(e) {
     const { imageData, settings, action } = e.data;
