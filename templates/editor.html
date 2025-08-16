@@ -136,6 +136,134 @@ JavaScript APIs Used:
     min-width: 80px;                    /* Match back button width for balance */
   }
 
+  /* ===== FILENAME RENAME STYLES ===== */
+  .filename-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-grow: 1;
+  }
+
+  .filename-text {
+    font-weight: 600;
+    font-size: 18px;
+    color: #ecf0f1;
+    max-width: 400px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .rename-button {
+    background: none;
+    border: none;
+    color: #ecf0f1;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    opacity: 0.7;
+  }
+
+  .rename-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    opacity: 1;
+  }
+
+  .rename-button i {
+    font-size: 16px;
+  }
+
+  /* Edit mode styles */
+  .filename-edit-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .filename-input {
+    padding: 6px 12px;
+    font-size: 16px;
+    border: 2px solid #3498db;
+    border-radius: 4px;
+    background-color: white;
+    color: #2c3e50;
+    min-width: 250px;
+    max-width: 400px;
+  }
+
+  .filename-input:focus {
+    outline: none;
+    border-color: #2980b9;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+  }
+
+  .filename-input.error {
+    border-color: #e74c3c;
+  }
+
+  .edit-action-buttons {
+    display: flex;
+    gap: 6px;
+  }
+
+  .edit-button {
+    padding: 6px 10px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .save-button {
+    background-color: #27ae60;
+    color: white;
+  }
+
+  .save-button:hover:not(:disabled) {
+    background-color: #229954;
+  }
+
+  .cancel-button {
+    background-color: #95a5a6;
+    color: white;
+  }
+
+  .cancel-button:hover {
+    background-color: #7f8c8d;
+  }
+
+  .edit-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .edit-button i {
+    font-size: 16px;
+  }
+
+  .error-message {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    color: #e74c3c;
+    font-size: 12px;
+    background-color: rgba(255, 255, 255, 0.95);
+    padding: 4px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    z-index: 1000;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
 </style>
 {% endblock %} 
 
@@ -151,9 +279,9 @@ JavaScript APIs Used:
     Back
   </a>
   
-  <!-- File name display: Shows current file being edited (extracted from public_id) -->
-  <div class="filename-display">
-    {{ file_id.split('/')[-1] if file_id else 'Untitled' }}
+  <!-- File name display: Shows current file being edited with rename capability -->
+  <div class="filename-container" id="filename-container">
+    <!-- Will be populated by JavaScript -->
   </div>
   
   <!-- Spacer: Provides visual balance for centered file name -->
@@ -184,6 +312,9 @@ JavaScript APIs Used:
 <!-- HTML Processor: Client-side CSS inlining and ID cleanup (replaces juice server) -->
 <script src="{{ url_for('static', filename='js/html-processor.js') }}"></script>
 
+<!-- Filename Manager: Unified filename management module -->
+<script src="{{ url_for('static', filename='js/filename-manager.js') }}"></script>
+
 <!-- ========================================================================
      GRAPESJS EDITOR INITIALIZATION AND CONFIGURATION
      ======================================================================== -->
@@ -196,6 +327,84 @@ JavaScript APIs Used:
     height: "100%",                               // Use full container height
     container: "#gjs",                            // Target container element
     fromElement: true,                            // Initialize from existing DOM element
+    
+    // ===== CANVAS CSS RESETS =====
+    // These styles are applied inside the editor canvas to prevent layout issues
+    // They do NOT affect the exported HTML
+    canvasCss: `
+      /* Basic resets for email compatibility */
+      html, body { 
+        margin: 0 !important; 
+        padding: 0 !important; 
+        height: auto !important; 
+        min-height: 0 !important; 
+      }
+      
+      /* Table resets for email */
+      table { 
+        border-collapse: collapse; 
+        border-spacing: 0; 
+        mso-table-lspace: 0pt; 
+        mso-table-rspace: 0pt; 
+      }
+      
+      /* Preserve original alignment for cells */
+      td, th { 
+        /* Remove padding reset to preserve original spacing */
+        vertical-align: top; 
+      }
+      
+      /* Preserve text alignment - IMPORTANT for logos */
+      td[align="center"], th[align="center"],
+      td[style*="text-align: center"], td[style*="text-align:center"],
+      th[style*="text-align: center"], th[style*="text-align:center"] {
+        text-align: center !important;
+      }
+      
+      /* NYC Logo specific - ensure it stays centered */
+      img[src*="logo.png"], img[src*="nyc.gov"] {
+        margin-left: auto !important;
+        margin-right: auto !important;
+      }
+      
+      /* Centered images in centered cells */
+      td[align="center"] img, 
+      td[style*="text-align: center"] img,
+      td[style*="text-align:center"] img {
+        margin-left: auto !important;
+        margin-right: auto !important;
+      }
+      
+      /* Image handling - be more selective */
+      img { 
+        border: 0; 
+        line-height: 0;
+        /* Remove display: block as it can break inline images */
+      }
+      
+      a img { 
+        border: 0; 
+      }
+      
+      /* Preserve inline and inline-block elements */
+      a, span { 
+        /* Preserve original display properties */
+      }
+      
+      /* Social media icons - preserve inline display */
+      a[href*="facebook"], a[href*="twitter"], 
+      a[href*="instagram"], a[href*="youtube"],
+      a[href*="tumblr"], a[href*="linkedin"] {
+        display: inline-block !important;
+      }
+      
+      /* Clear floats in case any column blocks rely on floats */
+      .gjs-row::after, .row::after, .columns::after { 
+        content: ""; 
+        display: table; 
+        clear: both; 
+      }
+    `,
     
     // ===== LOCAL STORAGE CONFIGURATION =====
     storageManager: {
@@ -216,14 +425,15 @@ JavaScript APIs Used:
         codeViewerTheme: "material",              // Material theme for code viewer
         importPlaceholder:                        // Default content for new newsletters
           '<table class="table"><tr><td class="cell">Hello world!</td></tr></table>',
-        cellStyle: {                              // Default styling for table cells
-          "font-size": "12px",
-          "font-weight": 300,
+        // Minimize default cell styles to preserve original template styles
+        cellStyle: {                              
           "vertical-align": "top",
-          color: "rgb(111, 119, 125)",
-          margin: 0,
-          padding: 0,
+          // Remove default font, color, margin, padding to preserve originals
         },
+        // Don't reset styles on import
+        resetStyleManager: false,
+        // Preserve inline styles
+        inlineCss: false,
       },
       
       // --- CKEditor Rich Text Plugin Configuration ---
@@ -257,18 +467,118 @@ JavaScript APIs Used:
   var cmdm = editor.Commands;     // Command manager for defining custom actions
 
   // ========================================================================
+  // CSS SANITIZER - Remove problematic styles for email compatibility
+  // ========================================================================
+  function sanitizeCssForEmail(css) {
+    let sanitized = css;
+    
+    // Remove height/min-height on body/html/wrapper to prevent post-save canvas inflation
+    const blockedSelectors = ['body', 'html', '#wrapper', '.wrapper'];
+    
+    blockedSelectors.forEach(selector => {
+      // Create regex to match the selector and its rules
+      const regex = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^}]*\\}`, 'gi');
+      
+      sanitized = sanitized.replace(regex, (match) => {
+        // Remove problematic height properties while preserving other styles
+        return match
+          .replace(/(?:min-)?height\s*:\s*[^;]+;?/gi, '')
+          .replace(/padding-bottom\s*:\s*[^;]+;?/gi, '');
+      });
+    });
+    
+    // Remove any 100vh values which are problematic in email clients
+    sanitized = sanitized.replace(/(?:min-)?height\s*:\s*100vh;?/gi, '');
+    
+    return sanitized;
+  }
+  
+  // ========================================================================
+  // ENSURE ALIGNMENT STYLES - Add critical alignment styles for logos/icons
+  // ========================================================================
+  function ensureAlignmentStyles(html) {
+    // Parse HTML to add necessary inline styles
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    // Find all centered table cells and ensure text-align is inline
+    const centeredCells = doc.querySelectorAll('td[align="center"], th[align="center"]');
+    centeredCells.forEach(cell => {
+      const style = cell.getAttribute('style') || '';
+      if (!style.includes('text-align')) {
+        cell.setAttribute('style', style + (style ? '; ' : '') + 'text-align: center');
+      }
+    });
+    
+    // Find NYC logo and ensure it's centered
+    const logos = doc.querySelectorAll('img[src*="logo.png"], img[src*="nyc.gov"]');
+    logos.forEach(logo => {
+      const style = logo.getAttribute('style') || '';
+      if (!style.includes('margin')) {
+        logo.setAttribute('style', style + (style ? '; ' : '') + 'margin: 0 auto; display: block');
+      }
+      // Also ensure parent cell is centered
+      const parentCell = logo.closest('td, th');
+      if (parentCell && !parentCell.getAttribute('align')) {
+        parentCell.setAttribute('align', 'center');
+        const parentStyle = parentCell.getAttribute('style') || '';
+        if (!parentStyle.includes('text-align')) {
+          parentCell.setAttribute('style', parentStyle + (parentStyle ? '; ' : '') + 'text-align: center');
+        }
+      }
+    });
+    
+    // Ensure social media icons stay inline
+    const socialLinks = doc.querySelectorAll('a[href*="facebook"], a[href*="twitter"], a[href*="instagram"], a[href*="youtube"], a[href*="tumblr"], a[href*="linkedin"]');
+    socialLinks.forEach(link => {
+      const style = link.getAttribute('style') || '';
+      if (!style.includes('display')) {
+        link.setAttribute('style', style + (style ? '; ' : '') + 'display: inline-block');
+      }
+    });
+    
+    // Return the body innerHTML
+    return doc.body.innerHTML;
+  }
+
+  // ========================================================================
   // SAVE PROJECT COMMAND - Save current editor content to server
   // ========================================================================
   cmdm.add("save-project", {
     run: function (editor, sender) {
       sender.set("active", 0);                    // Deactivate button after click
       
+      // --- Show Loading State ---
+      Swal.fire({
+        title: 'Saving Project...',
+        text: 'Please wait while we save your project',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => {
+          Swal.showLoading();
+        }
+      });
+      
       // --- Extract Content from Editor ---
-      const html = editor.getHtml();              // Get HTML content from canvas
-      const css = editor.getCss();                // Get CSS styles from editor
+      let html = editor.getHtml();                // Get HTML content from canvas
+      let css = editor.getCss();                  // Get CSS styles from editor
+      
+      // IMPORTANT: Don't sanitize CSS for saving - only sanitize for export
+      // This preserves all styles when reloading the editor
+      
+      // --- Ensure alignment styles are preserved ---
+      html = ensureAlignmentStyles(html);         // Add inline styles for logos/icons
       
       // --- Construct Complete HTML Document ---
-      const fullHtml = `<!doctype html><html><head><style>${css}</style></head><body>${html}</body></html>`;
+      // Save with full CSS to preserve all styles
+      const fullHtml = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>${css}</style>
+</head>
+<body>${html}</body>
+</html>`;
       
       // --- Send Save Request to Server ---
       const fileId = "{{ file_id }}";             // File identifier from template variable
@@ -332,21 +642,81 @@ JavaScript APIs Used:
     run: async function (editor, sender) {
       sender.set("active", 0);                    // Deactivate button after click
       
+      // --- Show Loading State ---
+      Swal.fire({
+        title: 'Exporting HTML...',
+        text: 'Please wait while we process and export your HTML file',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => {
+          Swal.showLoading();
+        }
+      });
+      
       try {
         // --- Extract Content from Editor ---
-        const html = editor.getHtml();              // Get HTML content from canvas
-        const css = editor.getCss();                // Get CSS styles from editor
+        let html = editor.getHtml();                // Get HTML content from canvas
+        const rawCss = editor.getCss();             // Get raw CSS styles from editor
+        const css = sanitizeCssForEmail(rawCss);    // Sanitize CSS for email compatibility
+        
+        // --- Ensure alignment styles are preserved BEFORE processing ---
+        html = ensureAlignmentStyles(html);         // Add inline styles for logos/icons
+        
+        // --- Add critical email CSS for social icons and logo ---
+        const criticalCss = `
+          /* Preserve social media icon alignment */
+          a[href*="facebook"] img,
+          a[href*="twitter"] img,
+          a[href*="instagram"] img,
+          a[href*="youtube"] img,
+          a[href*="tumblr"] img,
+          a[href*="linkedin"] img {
+            display: inline-block !important;
+            vertical-align: middle !important;
+          }
+          
+          /* Preserve NYC logo centering */
+          img[src*="logo.png"],
+          img[src*="nyc.gov"] {
+            display: block !important;
+            margin: 0 auto !important;
+          }
+          
+          /* Ensure social links stay inline */
+          a[href*="facebook"],
+          a[href*="twitter"],
+          a[href*="instagram"],
+          a[href*="youtube"],
+          a[href*="tumblr"],
+          a[href*="linkedin"] {
+            display: inline-block !important;
+            text-decoration: none !important;
+          }
+          
+          ${css}
+        `;
         
         // --- Construct Complete HTML Document ---
-        const fullHtml = `<!doctype html><html><head><style>${css}</style></head><body>${html}</body></html>`;
+        const fullHtml = `<!doctype html><html><head><style>${criticalCss}</style></head><body>${html}</body></html>`;
         
         // --- Prepare File Information ---
         const fileId = "{{ file_id }}";             // File identifier from template
         const fileName = fileId.split("/").pop();   // Extract filename from path
         
-        // --- Process HTML with Client-side Processor ---
+        // --- Format HTML before processing ---
+        let formattedHtml = fullHtml;
+        try {
+          // Format the HTML for better readability
+          formattedHtml = formatHtml(fullHtml);
+        } catch (formatError) {
+          console.warn('HTML formatting failed, using unformatted:', formatError);
+          // Continue with unformatted HTML
+        }
         
-        const result = window.HTMLProcessor.processAndDownload(fullHtml, fileName);
+        // --- Process HTML with Client-side Processor ---
+        // Use the filename from FilenameManager
+        const exportFilename = window.FilenameManager ? window.FilenameManager.getFilename() : fileName;
+        const result = window.HTMLProcessor.processAndDownload(formattedHtml, exportFilename);
         
         if (!result.success) {
           throw new Error(result.error);
@@ -391,6 +761,304 @@ JavaScript APIs Used:
   ]);
 
   // ========================================================================
+  // INITIALIZE FILENAME MANAGER (Using new module)
+  // ========================================================================
+  let globalFilenameManager = null;
+  
+  // Old FilenameManager object kept for compatibility with export function
+  const FilenameManager = {
+    currentFilename: '',
+    isEditing: false,
+    
+    // Initialize wrapper that creates new manager
+    init() {
+      const fileId = "{{ file_id }}";
+      const initialName = fileId ? fileId.split('/').pop() : 'Untitled.html';
+      
+      // Ensure .html extension
+      const fullName = initialName.endsWith('.html') ? initialName : initialName + '.html';
+      
+      // Create fileKey from public_id or filename
+      const fileKey = fileId ? fileId.replace(/\//g, '_') : window.FilenameManager.utils.stripHtmlExt(fullName).toLowerCase();
+      
+      // Create new FilenameManager instance
+      globalFilenameManager = new window.FilenameManager({
+        container: '#filename-container',
+        getInitialName: () => fullName,
+        fileKey: fileKey,
+        storage: 'local',
+        onNameChange: (newFullName, context) => {
+          // Update document title
+          document.title = `Newsletter Editor - ${newFullName}`;
+          // Update legacy currentFilename for backward compatibility
+          FilenameManager.currentFilename = newFullName;
+        },
+        messages: {
+          successTitle: 'Filename Updated',
+          successText: 'File has been renamed to',
+          invalidTitle: 'Invalid Filename',
+          toast: true,
+          toastTimer: 1500
+        }
+      });
+      
+      globalFilenameManager.init();
+      this.currentFilename = globalFilenameManager.getCurrentFullName();
+    },
+    
+    // Render the filename display or edit mode
+    render() {
+      const container = document.getElementById('filename-container');
+      
+      if (this.isEditing) {
+        container.innerHTML = `
+          <div class="filename-edit-container" style="position: relative;">
+            <input type="text" 
+                   class="filename-input" 
+                   id="filename-input" 
+                   value="${this.escapeHtml(this.currentFilename)}"
+                   placeholder="Enter filename..."
+                   aria-label="Filename">
+            <div class="edit-action-buttons">
+              <button class="edit-button save-button" 
+                      onclick="FilenameManager.save()" 
+                      title="Save (Enter)"
+                      aria-label="Save filename">
+                <i class="bi bi-check-lg"></i>
+              </button>
+              <button class="edit-button cancel-button" 
+                      onclick="FilenameManager.cancel()" 
+                      title="Cancel (Escape)"
+                      aria-label="Cancel editing">
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </div>
+            <div id="error-message" class="error-message" style="display: none;"></div>
+          </div>
+        `;
+        
+        // Set up input event handlers
+        const input = document.getElementById('filename-input');
+        input.focus();
+        input.select();
+        
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            this.save();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            this.cancel();
+          }
+        });
+        
+        // Clear error on input change
+        input.addEventListener('input', () => {
+          this.hideError();
+        });
+      } else {
+        container.innerHTML = `
+          <span class="filename-text" title="${this.escapeHtml(this.currentFilename)}">
+            ${this.escapeHtml(this.currentFilename)}
+          </span>
+          <button class="rename-button" 
+                  onclick="FilenameManager.startEdit()" 
+                  title="Rename file"
+                  aria-label="Rename file">
+            <i class="bi bi-pencil"></i>
+          </button>
+        `;
+      }
+    },
+    
+    // Start editing mode
+    startEdit() {
+      this.isEditing = true;
+      this.render();
+    },
+    
+    // Save the new filename
+    save() {
+      const input = document.getElementById('filename-input');
+      let newName = input.value.trim();
+      
+      // Validation
+      if (!newName) {
+        this.showError('Filename cannot be empty');
+        return;
+      }
+      
+      // Ensure .html extension
+      if (!newName.endsWith('.html')) {
+        newName += '.html';
+      }
+      
+      // Validate characters (allow letters, numbers, spaces, dashes, underscores)
+      const validPattern = /^[a-zA-Z0-9\s\-_.]+$/;
+      if (!validPattern.test(newName)) {
+        this.showError('Invalid characters. Use only letters, numbers, spaces, dashes, and underscores');
+        return;
+      }
+      
+      // Update filename
+      this.currentFilename = newName;
+      this.isEditing = false;
+      
+      // Store in localStorage
+      const fileId = "{{ file_id }}";
+      if (fileId) {
+        localStorage.setItem(`filename_${fileId}`, newName);
+      }
+      
+      // Show success message
+      Swal.fire({
+        icon: 'success',
+        title: 'Renamed!',
+        text: `File renamed to "${newName}"`,
+        timer: 1500,
+        showConfirmButton: false,
+        position: 'top-end',
+        toast: true
+      });
+      
+      this.render();
+    },
+    
+    // Cancel editing
+    cancel() {
+      this.isEditing = false;
+      this.hideError();
+      this.render();
+    },
+    
+    // Show error message
+    showError(message) {
+      const errorEl = document.getElementById('error-message');
+      if (errorEl) {
+        errorEl.textContent = message;
+        errorEl.style.display = 'block';
+        
+        const input = document.getElementById('filename-input');
+        if (input) {
+          input.classList.add('error');
+        }
+      }
+    },
+    
+    // Hide error message
+    hideError() {
+      const errorEl = document.getElementById('error-message');
+      if (errorEl) {
+        errorEl.style.display = 'none';
+      }
+      
+      const input = document.getElementById('filename-input');
+      if (input) {
+        input.classList.remove('error');
+      }
+    },
+    
+    // Escape HTML for safe display
+    escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    },
+    
+    // Get current filename for export
+    getFilename() {
+      return this.currentFilename;
+    }
+  };
+  
+  // Initialize filename manager
+  FilenameManager.init();
+  
+  // Make it globally accessible
+  window.FilenameManager = FilenameManager;
+
+  // ========================================================================
+  // HTML FORMATTER - Format HTML with proper indentation
+  // ========================================================================
+  function formatHtml(html) {
+    // Basic HTML formatter (similar to Prettier)
+    // This provides proper indentation and formatting
+    
+    let formatted = html;
+    let indentLevel = 0;
+    const indent = '  '; // 2 spaces
+    
+    // First, ensure doctype is on its own line
+    formatted = formatted.replace(/<!DOCTYPE[^>]*>/gi, (match) => {
+      return match + '\n';
+    });
+    
+    // Add newlines before and after tags
+    formatted = formatted.replace(/>\s*</g, '>\n<');
+    
+    // Split into lines
+    const lines = formatted.split('\n');
+    const formattedLines = [];
+    
+    // Track if we're inside certain tags that shouldn't be formatted
+    let inPreTag = false;
+    let inScriptTag = false;
+    let inStyleTag = false;
+    
+    for (let line of lines) {
+      line = line.trim();
+      if (!line) continue;
+      
+      // Check for pre, script, style tags
+      if (line.match(/<pre[^>]*>/i)) inPreTag = true;
+      if (line.match(/<\/pre>/i)) inPreTag = false;
+      if (line.match(/<script[^>]*>/i)) inScriptTag = true;
+      if (line.match(/<\/script>/i)) inScriptTag = false;
+      if (line.match(/<style[^>]*>/i)) inStyleTag = true;
+      if (line.match(/<\/style>/i)) inStyleTag = false;
+      
+      // Skip formatting for pre, script, style content
+      if (inPreTag || inScriptTag || inStyleTag) {
+        formattedLines.push(line);
+        continue;
+      }
+      
+      // Handle closing tags
+      if (line.match(/^<\//)) {
+        indentLevel = Math.max(0, indentLevel - 1);
+      }
+      
+      // Add proper indentation
+      const indentStr = indent.repeat(indentLevel);
+      formattedLines.push(indentStr + line);
+      
+      // Handle opening tags (but not self-closing)
+      if (line.match(/^<[^/][^>]*[^/]>/) && !line.match(/^<(img|br|hr|input|meta|link|area|base|col|embed|source|track|wbr)\b/i)) {
+        // Check if this is not a self-closing tag or void element
+        if (!line.match(/\/>$/)) {
+          indentLevel++;
+        }
+      }
+      
+      // Handle self-closing tags that might have been split
+      if (line.match(/\/>$/)) {
+        // Don't increase indent for self-closing tags
+      }
+    }
+    
+    // Join lines back together
+    formatted = formattedLines.join('\n');
+    
+    // Clean up extra blank lines (keep max 1 blank line)
+    formatted = formatted.replace(/\n{3,}/g, '\n\n');
+    
+    // Ensure proper spacing around DOCTYPE
+    formatted = formatted.replace(/(<!DOCTYPE[^>]*>)\n+<html/gi, '$1\n<html');
+    
+    return formatted;
+  }
+
+  // ========================================================================
   // EDITOR READY EVENT - Load existing content when editor initializes
   // ========================================================================
   editor.onReady(function () {
@@ -407,7 +1075,44 @@ JavaScript APIs Used:
           }
           return response.text();               // Parse response as text/HTML
         })
-        .then((data) => editor.setComponents(data))  // Load content into editor
+        .then((data) => {
+          // Parse the saved HTML to extract body content and styles
+          try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(data, 'text/html');
+            
+            if (doc && doc.body) {
+              // Extract body HTML for components
+              const bodyHtml = doc.body.innerHTML;
+              
+              // Extract all styles from style tags
+              const styles = Array.from(doc.querySelectorAll('style'))
+                .map(s => s.textContent || '')
+                .join('\n');
+              
+              // IMPORTANT: Set both components AND styles to preserve everything
+              // The order matters - set components first, then styles
+              if (bodyHtml) {
+                editor.setComponents(bodyHtml);
+              }
+              
+              if (styles && styles.trim()) {
+                // Set the styles after components to ensure they apply correctly
+                editor.setStyle(styles);
+              }
+              
+              console.log('Content loaded successfully');
+            } else {
+              // Fallback: load raw HTML if parsing fails
+              editor.setComponents(data);
+              console.warn('Loaded raw HTML as fallback');
+            }
+          } catch (e) {
+            console.error('Failed to parse saved HTML:', e);
+            // Last resort: just load the raw HTML
+            editor.setComponents(data);
+          }
+        })  // Load content into editor
         .catch((error) => {
           // --- Handle Content Loading Errors ---
           console.error('Error loading content:', error);

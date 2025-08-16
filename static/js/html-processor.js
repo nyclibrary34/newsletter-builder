@@ -135,10 +135,91 @@ function fixEmailCompatibility(doc) {
   // Add MSO properties for Outlook
   addMsoProperties(doc);
   
+  // Ensure alignment styles are preserved
+  ensureAlignmentStyles(doc);
+  
   // Clean up temporary preservation attributes
   doc.querySelectorAll('[data-preserve-layout], [data-preserve-center]').forEach(element => {
     element.removeAttribute('data-preserve-layout');
     element.removeAttribute('data-preserve-center');
+  });
+}
+
+/**
+ * Ensure alignment styles are preserved
+ * @param {Document} doc - Document object
+ */
+function ensureAlignmentStyles(doc) {
+  // Find all centered table cells and ensure text-align is inline
+  const centeredCells = doc.querySelectorAll('td[align="center"], th[align="center"]');
+  centeredCells.forEach(cell => {
+    const style = cell.getAttribute('style') || '';
+    if (!style.includes('text-align')) {
+      cell.setAttribute('style', style + (style ? '; ' : '') + 'text-align: center');
+    }
+  });
+  
+  // Find NYC logo and ensure it's centered
+  const logos = doc.querySelectorAll('img[src*="logo.png"], img[src*="nyc.gov"]');
+  logos.forEach(logo => {
+    const style = logo.getAttribute('style') || '';
+    // Skip social media platform logos
+    const parentLink = logo.closest('a');
+    const isSocialIcon = parentLink && (
+      parentLink.href.includes('facebook') ||
+      parentLink.href.includes('twitter') ||
+      parentLink.href.includes('instagram') ||
+      parentLink.href.includes('youtube') ||
+      parentLink.href.includes('tumblr') ||
+      parentLink.href.includes('linkedin')
+    );
+    
+    if (!isSocialIcon) {
+      // Only apply centering to non-social logos (like NYC logo)
+      if (!style.includes('margin') && !style.includes('display: inline')) {
+        logo.setAttribute('style', style + (style ? '; ' : '') + 'margin: 0 auto; display: block');
+      }
+      // Also ensure parent cell is centered
+      const parentCell = logo.closest('td, th');
+      if (parentCell && !parentCell.getAttribute('align')) {
+        parentCell.setAttribute('align', 'center');
+        const parentStyle = parentCell.getAttribute('style') || '';
+        if (!parentStyle.includes('text-align')) {
+          parentCell.setAttribute('style', parentStyle + (parentStyle ? '; ' : '') + 'text-align: center');
+        }
+      }
+    }
+  });
+  
+  // Ensure social media icons stay inline with proper display
+  const socialLinks = doc.querySelectorAll('a[href*="facebook"], a[href*="twitter"], a[href*="instagram"], a[href*="youtube"], a[href*="tumblr"], a[href*="linkedin"]');
+  socialLinks.forEach(link => {
+    // Force inline-block display for social links
+    const style = link.getAttribute('style') || '';
+    const updatedStyle = style.replace(/display\s*:\s*[^;]+;?/gi, ''); // Remove existing display
+    link.setAttribute('style', updatedStyle + (updatedStyle ? '; ' : '') + 'display: inline-block !important; text-decoration: none !important');
+    
+    // Ensure images inside social links are properly styled
+    const img = link.querySelector('img');
+    if (img) {
+      const imgStyle = img.getAttribute('style') || '';
+      const updatedImgStyle = imgStyle.replace(/display\s*:\s*[^;]+;?/gi, ''); // Remove existing display
+      img.setAttribute('style', updatedImgStyle + (updatedImgStyle ? '; ' : '') + 'display: inline-block !important; vertical-align: middle !important');
+    }
+  });
+  
+  // Ensure footer social container maintains proper text alignment
+  const footerCells = doc.querySelectorAll('td');
+  footerCells.forEach(cell => {
+    // Check if this cell contains social links
+    const socialLinksInCell = cell.querySelectorAll('a[href*="facebook"], a[href*="twitter"], a[href*="instagram"], a[href*="youtube"], a[href*="tumblr"], a[href*="linkedin"]');
+    if (socialLinksInCell.length > 1) {
+      // This is likely the social media container
+      const style = cell.getAttribute('style') || '';
+      if (!style.includes('text-align')) {
+        cell.setAttribute('style', style + (style ? '; ' : '') + 'text-align: left');
+      }
+    }
   });
 }
 
@@ -222,26 +303,39 @@ function optimizeImages(doc) {
       img.setAttribute('border', '0');
     }
     
-    // Only add display: block if it's needed and won't break layout
-    const style = img.getAttribute('style') || '';
-    if (!style.includes('display:') && !style.includes('display ')) {
-      // Check if this image is in a preserved layout container
-      const preservedParent = img.closest('[data-preserve-center], [data-preserve-layout]');
-      
-      if (!preservedParent) {
-        // Check if this image is likely a logo or should maintain inline behavior
-        const parent = img.closest('td, th, div');
-        const parentStyle = parent ? (parent.getAttribute('style') || '') : '';
+    // Check if image is part of social media icons or logos
+    const parent = img.closest('a');
+    const isSocialIcon = parent && (
+      parent.href?.includes('facebook') ||
+      parent.href?.includes('twitter') ||
+      parent.href?.includes('instagram') ||
+      parent.href?.includes('youtube') ||
+      parent.href?.includes('tumblr') ||
+      parent.href?.includes('linkedin')
+    );
+    
+    // Don't modify display property for social icons or small inline images
+    if (!isSocialIcon) {
+      const style = img.getAttribute('style') || '';
+      if (!style.includes('display:') && !style.includes('display ')) {
+        // Check if this image is in a preserved layout container
+        const preservedParent = img.closest('[data-preserve-center], [data-preserve-layout]');
         
-        // Don't add display: block to images in centered containers (likely logos)
-        const isInCenteredContainer = parentStyle.includes('text-align: center') || 
-                                     parentStyle.includes('text-align:center');
-        const isSmallImage = img.getAttribute('width') && parseInt(img.getAttribute('width')) < 400;
-        
-        // Only add display: block for content images, not logos or inline images
-        if (!isInCenteredContainer || !isSmallImage) {
-          const newStyle = style + (style ? '; ' : '') + 'display: block';
-          img.setAttribute('style', newStyle);
+        if (!preservedParent) {
+          // Check if this image is likely a logo or should maintain inline behavior
+          const parentTd = img.closest('td, th, div');
+          const parentStyle = parentTd ? (parentTd.getAttribute('style') || '') : '';
+          
+          // Don't add display: block to images in centered containers (likely logos)
+          const isInCenteredContainer = parentStyle.includes('text-align: center') || 
+                                       parentStyle.includes('text-align:center');
+          const isSmallImage = img.getAttribute('width') && parseInt(img.getAttribute('width')) < 400;
+          
+          // Only add display: block for large content images, not logos or inline images
+          if (!isInCenteredContainer && !isSmallImage) {
+            const newStyle = style + (style ? '; ' : '') + 'display: block';
+            img.setAttribute('style', newStyle);
+          }
         }
       }
     }
@@ -494,6 +588,99 @@ function parseDeclarations(declarationText) {
 }
 
 /**
+ * Format HTML with proper indentation (Prettier-like)
+ * @param {string} html - HTML content to format
+ * @returns {string} Formatted HTML
+ */
+function formatHTMLContent(html) {
+  // Parse the HTML for proper formatting
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  
+  // Format function with proper indentation
+  function formatNode(node, level = 0) {
+    const indent = '  '.repeat(level);
+    let result = '';
+    
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent.trim();
+      if (text) {
+        return indent + text;
+      }
+      return '';
+    }
+    
+    if (node.nodeType === Node.COMMENT_NODE) {
+      return indent + '<!--' + node.textContent + '-->';
+    }
+    
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const tagName = node.tagName.toLowerCase();
+      const voidElements = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'];
+      const isVoid = voidElements.includes(tagName);
+      const inlineElements = ['a', 'span', 'strong', 'em', 'b', 'i', 'u', 'code', 'small', 'sub', 'sup'];
+      const isInline = inlineElements.includes(tagName);
+      
+      // Start tag
+      result = indent + '<' + tagName;
+      
+      // Add attributes
+      for (let attr of node.attributes) {
+        result += ' ' + attr.name;
+        if (attr.value) {
+          result += '="' + attr.value.replace(/"/g, '&quot;') + '"';
+        }
+      }
+      
+      if (isVoid) {
+        result += '>';
+        return result;
+      }
+      
+      result += '>';
+      
+      // Process children
+      const children = Array.from(node.childNodes);
+      const hasOnlyText = children.every(child => child.nodeType === Node.TEXT_NODE);
+      
+      if (hasOnlyText && node.textContent.trim()) {
+        // Inline text content
+        result += node.textContent.trim();
+        result += '</' + tagName + '>';
+      } else if (children.length > 0) {
+        // Format children
+        const childrenFormatted = [];
+        for (let child of children) {
+          const formatted = formatNode(child, level + 1);
+          if (formatted) {
+            childrenFormatted.push(formatted);
+          }
+        }
+        
+        if (childrenFormatted.length > 0) {
+          if (!isInline && tagName !== 'title') {
+            result += '\n' + childrenFormatted.join('\n') + '\n' + indent;
+          } else {
+            result += childrenFormatted.join('');
+          }
+        }
+        result += '</' + tagName + '>';
+      } else {
+        result += '</' + tagName + '>';
+      }
+    }
+    
+    return result;
+  }
+  
+  // Format the document
+  let formatted = '<!DOCTYPE html>\n';
+  formatted += formatNode(doc.documentElement, 0);
+  
+  return formatted;
+}
+
+/**
  * Process HTML and trigger download
  * @param {string} htmlContent - Raw HTML content
  * @param {string} filename - Desired filename for download
@@ -501,7 +688,19 @@ function parseDeclarations(declarationText) {
 function processAndDownload(htmlContent, filename = 'newsletter.html') {
   try {
     // Process the HTML
-    const processedHTML = processHTML(htmlContent);
+    let processedHTML = processHTML(htmlContent);
+    
+    // Format the HTML for better readability
+    try {
+      processedHTML = formatHTMLContent(processedHTML);
+    } catch (formatError) {
+      console.warn('HTML formatting failed, using processed but unformatted HTML:', formatError);
+    }
+    
+    // Ensure filename has .html extension
+    if (!filename.endsWith('.html')) {
+      filename += '.html';
+    }
     
     // Create blob and download
     const blob = new Blob([processedHTML], { type: 'text/html;charset=utf-8' });
@@ -532,6 +731,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     processHTML,
     processAndDownload,
+    formatHTMLContent,
     generateUUID,
     replaceIDs
   };
@@ -540,6 +740,7 @@ if (typeof module !== 'undefined' && module.exports) {
   window.HTMLProcessor = {
     processHTML,
     processAndDownload,
+    formatHTMLContent,
     generateUUID,
     replaceIDs
   };
