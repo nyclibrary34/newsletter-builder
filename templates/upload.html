@@ -34,6 +34,136 @@ Route Dependencies:
      PAGE-SPECIFIC CSS STYLES
      ======================================================================== -->
 <style>
+  /* ===== FILENAME MANAGER STYLES (for cards) ===== */
+  .fnm {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .fnm__base {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: #212529;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-grow: 1;
+  }
+
+  .fnm__ext {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: #6c757d;
+    opacity: 0.8;
+  }
+
+  .fnm__edit {
+    background: none;
+    border: none;
+    color: #6c757d;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    opacity: 0.7;
+  }
+
+  .fnm__edit:hover {
+    background-color: #e9ecef;
+    opacity: 1;
+    color: #495057;
+  }
+
+  .fnm__edit:focus {
+    outline: 2px solid #10b981;
+    outline-offset: 2px;
+  }
+
+  .fnm__edit svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* Edit mode styles */
+  .fnm__edit-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .fnm__input {
+    padding: 4px 8px;
+    font-size: 0.95rem;
+    border: 2px solid #3498db;
+    border-radius: 4px;
+    background-color: white;
+    color: #212529;
+    flex-grow: 1;
+    min-width: 150px;
+  }
+
+  .fnm__input:focus {
+    outline: none;
+    border-color: #2980b9;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+  }
+
+  .fnm__ext-fixed {
+    font-size: 0.95rem;
+    color: #6c757d;
+    font-weight: 500;
+  }
+
+  .fnm__actions {
+    display: inline-flex;
+    gap: 4px;
+  }
+
+  .fnm__save,
+  .fnm__cancel {
+    padding: 4px 8px;
+    background-color: white;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+  }
+
+  .fnm__save {
+    color: #27ae60;
+    border-color: #27ae60;
+  }
+
+  .fnm__save:hover {
+    background-color: #27ae60;
+    color: white;
+  }
+
+  .fnm__save svg,
+  .fnm__cancel svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .fnm__cancel {
+    color: #e74c3c;
+    border-color: #e74c3c;
+  }
+
+  .fnm__cancel:hover {
+    background-color: #e74c3c;
+    color: white;
+  }
   /* ===== FILE CARD CONTAINER STYLES ===== */
   .tool-card-link {
     text-decoration: none;              /* Remove link underlines */
@@ -158,9 +288,11 @@ Route Dependencies:
             
             <!-- ===== FILE INFORMATION AND ACTIONS ===== -->
             <div class="flex-grow-1">
-              <!-- File name (extracted from public_id path) -->
+              <!-- File name with rename capability -->
               <h5 class="card-title mb-1">
-                {{ file.public_id.split('/')[-1] }}
+                <div class="filename-container" data-file-id="{{ file.public_id }}" data-filename="{{ file.public_id.split('/')[-1] }}">
+                  <!-- Will be populated by JavaScript -->
+                </div>
               </h5>
               
               <!-- Upload date (formatted using custom Jinja2 filter) -->
@@ -175,11 +307,13 @@ Route Dependencies:
                   >Edit</a
                 >
                 
-                <!-- Download: Triggers file download (served through Flask to avoid mixed content) -->
-                <a
-                  href="{{ url_for('newsletter.download_file', file_id=file.public_id) }}"
-                  class="btn btn-sm btn-success"
-                  >Download</a
+                <!-- Download: Process and download with CSS inlining -->
+                <button
+                  class="btn btn-sm btn-success download-btn"
+                  data-file-id="{{ file.public_id }}"
+                  data-filename="{{ file.public_id.split('/')[-1] }}"
+                  onclick="processAndDownload(this)"
+                  >Download</button
                 >
                 
                 <!-- Delete: Removes file from Cloudinary storage -->
@@ -199,4 +333,196 @@ Route Dependencies:
     
   </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Filename Manager Module -->
+<script src="{{ url_for('static', filename='js/filename-manager.js') }}"></script>
+
+<!-- HTML Processor Module (same as editor) -->
+<script src="{{ url_for('static', filename='js/html-processor.js') }}"></script>
+
+<script>
+  // Function to process and download HTML with CSS inlining (same as editor export)
+  async function processAndDownload(button) {
+    const fileId = button.dataset.fileId;
+    let filename = button.dataset.filename;
+    
+    // Get the renamed filename if it exists
+    const container = button.closest('.card-body').querySelector('.filename-container');
+    if (container) {
+      const currentFilename = container.dataset.filename;
+      if (currentFilename) {
+        filename = currentFilename;
+      }
+    }
+    
+    // Show loading state
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Processing...';
+    
+    try {
+      // Fetch the HTML content
+      const response = await fetch(`/content/${fileId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch file content');
+      }
+      
+      const htmlContent = await response.text();
+      
+      // Process the HTML with the same processor used in the editor
+      if (window.HTMLProcessor && window.HTMLProcessor.processAndDownload) {
+        const result = window.HTMLProcessor.processAndDownload(htmlContent, filename);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Processing failed');
+        }
+        
+        // Show success message
+        if (typeof Swal !== 'undefined') {
+          Swal.fire({
+            icon: 'success',
+            title: 'Download Complete!',
+            text: 'HTML file processed and downloaded successfully!',
+            timer: 2000,
+            showConfirmButton: false,
+            toast: true,
+            position: 'top-end'
+          });
+        }
+      } else {
+        // Fallback: download without processing
+        const blob = new Blob([htmlContent], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error('Download error:', error);
+      if (typeof Swal !== 'undefined') {
+        Swal.fire({
+          icon: 'error',
+          title: 'Download Failed!',
+          text: `Failed to process HTML: ${error.message}`,
+          confirmButtonColor: '#d33'
+        });
+      } else {
+        alert(`Download failed: ${error.message}`);
+      }
+    } finally {
+      // Restore button state
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+  
+  // Function to check for duplicate filenames and add numbering
+  function ensureUniqueFilename(filename, existingFilenames) {
+    let baseName = FilenameManager.utils.stripHtmlExt(filename);
+    let extension = '.html';
+    let uniqueName = baseName + extension;
+    let counter = 1;
+    
+    // Check if the filename already exists
+    while (existingFilenames.includes(uniqueName.toLowerCase())) {
+      uniqueName = `${baseName} (${counter})${extension}`;
+      counter++;
+    }
+    
+    return uniqueName;
+  }
+  
+  // Initialize filename managers for all file cards
+  document.addEventListener('DOMContentLoaded', function() {
+    const filenameContainers = document.querySelectorAll('.filename-container');
+    const managers = [];
+    const existingFilenames = [];
+    
+    // First pass: collect all existing filenames
+    filenameContainers.forEach((container) => {
+      const filename = container.dataset.filename;
+      if (filename) {
+        existingFilenames.push(filename.toLowerCase());
+      }
+    });
+    
+    // Second pass: check for duplicates and rename if necessary
+    const filenameCount = {};
+    filenameContainers.forEach((container) => {
+      const fileId = container.dataset.fileId;
+      let filename = container.dataset.filename;
+      
+      // Count occurrences of each base filename
+      const baseName = FilenameManager.utils.stripHtmlExt(filename).toLowerCase();
+      if (!filenameCount[baseName]) {
+        filenameCount[baseName] = [];
+      }
+      filenameCount[baseName].push({ container, fileId, originalName: filename });
+    });
+    
+    // Apply numbering to duplicates
+    Object.keys(filenameCount).forEach(baseName => {
+      const files = filenameCount[baseName];
+      if (files.length > 1) {
+        // Multiple files with the same base name
+        files.forEach((file, index) => {
+          if (index > 0) {
+            // Add numbering to duplicates (not the first one)
+            const newName = `${FilenameManager.utils.stripHtmlExt(file.originalName)} (${index}).html`;
+            file.container.dataset.filename = newName;
+            
+            // Update the download button as well
+            const downloadBtn = file.container.closest('.card-body').querySelector('.download-btn');
+            if (downloadBtn) {
+              downloadBtn.dataset.filename = newName;
+            }
+          }
+        });
+      }
+    });
+    
+    // Third pass: create FilenameManager instances
+    filenameContainers.forEach((container) => {
+      const fileId = container.dataset.fileId;
+      const filename = container.dataset.filename;
+      
+      // Create unique file key from public_id
+      const fileKey = fileId ? fileId.replace(/\//g, '_') : FilenameManager.utils.stripHtmlExt(filename).toLowerCase();
+      
+      // Create FilenameManager instance for this card
+      const manager = new FilenameManager({
+        container: container,
+        getInitialName: () => filename,
+        fileKey: fileKey,
+        storage: 'local',
+        onNameChange: (newFullName, context) => {
+          // Update data attribute for consistency
+          container.dataset.filename = newFullName;
+          
+          // Also update the download button
+          const downloadBtn = container.closest('.card-body').querySelector('.download-btn');
+          if (downloadBtn) {
+            downloadBtn.dataset.filename = newFullName;
+          }
+        },
+        messages: {
+          successTitle: 'Filename Updated',
+          successText: 'File has been renamed to',
+          invalidTitle: 'Invalid Filename',
+          toast: true,
+          toastTimer: 1500
+        }
+      });
+      
+      manager.init();
+      managers.push(manager);
+    });
+  });
+</script>
 {% endblock %}
