@@ -10,6 +10,62 @@ import cloudinary.uploader
 import cloudinary.api
 import cloudinary.utils
 import requests
+from werkzeug.utils import secure_filename
+from cloudinary.exceptions import Error as CloudinaryError
+
+
+def _build_storage_candidate_paths(file_id: str) -> List[str]:
+    """Generate potential storage paths for legacy and normalized structures."""
+    decoded_id = unquote(file_id).strip('/')
+
+    def add_candidate(candidates: List[str], candidate: str) -> None:
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+
+    def generate_variations(path: str) -> List[str]:
+        segments = path.split('/')
+        if len(segments) < 3:
+            return [path]
+
+        has_base = segments[0] == 'newsletters'
+        year_index = 1 if has_base else 0
+        month_index = year_index + 1
+        if len(segments) <= month_index:
+            return [path]
+
+        filename_index = len(segments) - 1
+        filename = segments[filename_index]
+        month = segments[month_index]
+
+        month_variants = {month}
+        month_lower = month.lower()
+        if month_lower != month:
+            month_variants.add(month_lower)
+
+        filename_variants = {filename}
+        sanitized_filename = secure_filename(filename)
+        if sanitized_filename and sanitized_filename != filename:
+            filename_variants.add(sanitized_filename)
+
+        variations = []
+        for month_value in month_variants:
+            for filename_value in filename_variants:
+                updated_segments = segments[:]
+                updated_segments[month_index] = month_value
+                updated_segments[filename_index] = filename_value
+                variations.append('/'.join(updated_segments))
+        return variations
+
+    candidate_paths: List[str] = []
+    add_candidate(candidate_paths, decoded_id)
+    if decoded_id and not decoded_id.startswith('newsletters/'):
+        add_candidate(candidate_paths, f"newsletters/{decoded_id}")
+
+    for path in candidate_paths[:]:
+        for variant in generate_variations(path):
+            add_candidate(candidate_paths, variant)
+
+    return candidate_paths
 
 
 class StorageInterface(ABC):
@@ -55,17 +111,32 @@ class CloudinaryStorage(StorageInterface):
             # Get current date for folder structure
             current_date = datetime.now()
             year = current_date.strftime('%Y')
-            month = current_date.strftime('%B')
-            
-            # Create folder path: newsletters/YYYY/MMMM/
-            folder_path = f"newsletters/{year}/{month}"
-            
+            month = current_date.strftime('%B').lower()
+
+            base_folder = "newsletters"
+            folder_path = f"{base_folder}/{year}/{month}"
+
+            # Ensure Cloudinary folder hierarchy exists
+            for folder in (base_folder, f"{base_folder}/{year}", folder_path):
+                try:
+                    cloudinary.api.create_folder(folder)
+                except CloudinaryError as err:
+                    if "already exists" not in str(err).lower():
+                        raise
+
+            sanitized_filename = secure_filename(filename)
+            if not sanitized_filename:
+                sanitized_filename = f"file-{current_date.strftime('%H%M%S%f')}"
+
+            file.seek(0)
             result = cloudinary.uploader.upload(
                 file,
                 resource_type="raw",
-                public_id=f"{folder_path}/{filename}"
+                public_id=f"{folder_path}/{sanitized_filename}",
+                overwrite=True,
+                unique_filename=False,
             )
-            
+
             return {
                 'success': True,
                 'file_id': result['public_id'],
@@ -89,11 +160,25 @@ class CloudinaryStorage(StorageInterface):
     
     def delete(self, file_id: str) -> bool:
         """Delete file from Cloudinary"""
-        try:
-            cloudinary.uploader.destroy(file_id, resource_type="raw")
-            return True
-        except Exception:
-            return False
+        candidate_paths = _build_storage_candidate_paths(file_id)
+
+        for candidate in candidate_paths:
+            try:
+                result = cloudinary.uploader.destroy(candidate, resource_type="raw")
+            except CloudinaryError as err:
+                if 'not found' in str(err).lower():
+                    continue
+                return False
+            except Exception:
+                return False
+
+            outcome = (result or {}).get('result')
+            if outcome == 'ok':
+                return True
+            if outcome == 'not found':
+                continue
+
+        return False
     
     def save(self, file_id: str, content: bytes) -> bool:
         """Save/overwrite file content in Cloudinary"""
@@ -155,8 +240,8 @@ class LocalStorage(StorageInterface):
             # Get current date for folder structure
             current_date = datetime.now()
             year = current_date.strftime('%Y')
-            month = current_date.strftime('%B')
-            
+            month = current_date.strftime('%B').lower()
+
             # Create folder path: newsletters/YYYY/MMMM/
             folder_path = f"newsletters/{year}/{month}"
             full_folder_path = os.path.join(self.full_path, folder_path)
@@ -164,15 +249,19 @@ class LocalStorage(StorageInterface):
             # Ensure directory exists
             os.makedirs(full_folder_path, exist_ok=True)
             
+            sanitized_filename = secure_filename(filename)
+            if not sanitized_filename:
+                sanitized_filename = f"file-{current_date.strftime('%H%M%S%f')}"
+
             # Save file
-            file_path = os.path.join(full_folder_path, filename)
+            file_path = os.path.join(full_folder_path, sanitized_filename)
             file.seek(0)  # Reset file pointer
             with open(file_path, 'wb') as f:
                 shutil.copyfileobj(file, f)
             
             # Get file stats
             stat = os.stat(file_path)
-            file_id = f"{folder_path}/{filename}"
+            file_id = f"{folder_path}/{sanitized_filename}"
             
             return {
                 'success': True,
@@ -200,18 +289,19 @@ class LocalStorage(StorageInterface):
     def delete(self, file_id: str) -> bool:
         """Delete file from local storage"""
         try:
-            file_path = os.path.join(self.full_path, file_id)
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                
-                # Clean up empty directories
-                dir_path = os.path.dirname(file_path)
-                try:
-                    os.removedirs(dir_path)
-                except OSError:
-                    pass  # Directory not empty, which is fine
-                
-                return True
+            for candidate in _build_storage_candidate_paths(file_id):
+                file_path = os.path.join(self.full_path, candidate)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    
+                    # Clean up empty directories
+                    dir_path = os.path.dirname(file_path)
+                    try:
+                        os.removedirs(dir_path)
+                    except OSError:
+                        pass  # Directory not empty, which is fine
+                    
+                    return True
             return False
         except Exception:
             return False
@@ -307,3 +397,4 @@ class StorageManager:
     def get_file_url(self, file_id: str) -> str:
         """Get file URL using the configured storage backend"""
         return self.storage.get_file_url(file_id)
+
