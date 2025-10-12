@@ -290,7 +290,7 @@ Route Dependencies:
             <div class="flex-grow-1">
               <!-- File name with rename capability -->
               <h5 class="card-title mb-1">
-                <div class="filename-container" data-file-id="{{ file.public_id }}" data-filename="{{ file.public_id.split('/')[-1] }}">
+                <div class="filename-container" data-file-id="{{ file.public_id }}" data-filename="{{ file.display_name }}">
                   <!-- Will be populated by JavaScript -->
                 </div>
               </h5>
@@ -311,7 +311,7 @@ Route Dependencies:
                 <button
                   class="btn btn-sm btn-success download-btn"
                   data-file-id="{{ file.public_id }}"
-                  data-filename="{{ file.public_id.split('/')[-1] }}"
+                  data-filename="{{ file.display_name }}"
                   onclick="processAndDownload(this)"
                   >Download</button
                 >

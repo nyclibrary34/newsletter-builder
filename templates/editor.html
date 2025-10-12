@@ -773,8 +773,10 @@ JavaScript APIs Used:
     // Initialize wrapper that creates new manager
     init() {
       const fileId = "{{ file_id }}";
-      const initialName = fileId ? fileId.split('/').pop() : 'Untitled.html';
-      
+      // Use the clean display_filename passed from the server
+      const displayFilename = "{{ display_filename }}";
+      const initialName = displayFilename || (fileId ? fileId.split('/').pop() : 'Untitled.html');
+
       // Ensure .html extension
       const fullName = initialName.endsWith('.html') ? initialName : initialName + '.html';
       

@@ -6,7 +6,7 @@ import os
 import requests
 from urllib.parse import unquote
 from datetime import datetime
-from utils.storage import StorageManager
+from utils.storage import StorageManager, sanitize_filename
 
 newsletter_bp = Blueprint('newsletter', __name__)
 
@@ -52,7 +52,16 @@ def edit_file(file_id):
     """Edit a newsletter file in the editor"""
     cloud_name = current_app.config['CLOUDINARY_CLOUD_NAME']
     storage_type = current_app.config['STORAGE_TYPE']
-    return render_template('editor.html', file_id=file_id, cloud_name=cloud_name, storage_type=storage_type)
+
+    # Extract and sanitize filename for display
+    display_filename = file_id.split('/')[-1]
+    display_filename = sanitize_filename(display_filename)
+
+    return render_template('editor.html',
+                         file_id=file_id,
+                         display_filename=display_filename,
+                         cloud_name=cloud_name,
+                         storage_type=storage_type)
 
 @newsletter_bp.route('/content/<path:file_id>')
 def get_file_content(file_id):
