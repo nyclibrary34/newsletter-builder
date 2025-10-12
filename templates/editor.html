@@ -319,6 +319,136 @@ JavaScript APIs Used:
      GRAPESJS EDITOR INITIALIZATION AND CONFIGURATION
      ======================================================================== -->
 <script type="text/javascript">
+  // ========================================================================
+  // WORD PASTE SANITIZER - Remove Word-specific styles while preserving links
+  // ========================================================================
+  function sanitizePastedHtml(html) {
+    if (!html) {
+      return html;
+    }
+
+    var wordMarkupPattern = /(class="?Mso|style="[^"]*mso-|<!--\s*\[if\s+gte\s+mso)/i;
+    if (!wordMarkupPattern.test(html)) {
+      return html;
+    }
+
+    var wrapper = document.createElement('div');
+    wrapper.innerHTML = html.replace(/<!--\[if[\s\S]*?endif\]-->/gi, '');
+
+    function wrapNodeWithTag(node, tagName) {
+      if (!node || node.tagName === tagName.toUpperCase()) {
+        return node;
+      }
+      var replacement = document.createElement(tagName);
+      while (node.firstChild) {
+        replacement.appendChild(node.firstChild);
+      }
+      node.parentNode.replaceChild(replacement, node);
+      return replacement;
+    }
+
+    Array.from(wrapper.querySelectorAll('style, meta, link, script')).forEach(function (node) {
+      node.parentNode.removeChild(node);
+    });
+
+    Array.from(wrapper.querySelectorAll('o\:p, w\:p, w\:tbl')).forEach(function (node) {
+      node.parentNode.removeChild(node);
+    });
+
+    Array.from(wrapper.querySelectorAll('*')).forEach(function (node) {
+      var originalStyle = node.getAttribute('style');
+      if (originalStyle) {
+        var styleValue = originalStyle.toLowerCase();
+
+        if (/font-weight\s*:\s*(bold|700|600|800)/.test(styleValue)) {
+          node = wrapNodeWithTag(node, 'strong');
+        }
+        if (/font-style\s*:\s*italic/.test(styleValue)) {
+          node = wrapNodeWithTag(node, 'em');
+        }
+        if (/text-decoration\s*:\s*underline/.test(styleValue)) {
+          node = wrapNodeWithTag(node, 'u');
+        }
+      }
+
+      Array.from(node.attributes).forEach(function (attr) {
+        var name = attr.name.toLowerCase();
+        var whitelist = {
+          a: ['href', 'target', 'title', 'rel']
+        };
+        var allowed = whitelist[node.tagName ? node.tagName.toLowerCase() : ''] || [];
+
+        if (allowed.indexOf(name) !== -1) {
+          if (name === 'href' && !attr.value) {
+            node.removeAttribute(attr.name);
+          }
+          return;
+        }
+
+        if (
+          name === 'style' ||
+          name === 'class' ||
+          name === 'id' ||
+          name === 'width' ||
+          name === 'height' ||
+          name === 'align' ||
+          name === 'valign' ||
+          name === 'lang' ||
+          name === 'border' ||
+          name === 'color' ||
+          name === 'face' ||
+          name.indexOf('mso') === 0 ||
+          name.indexOf('data-') === 0
+        ) {
+          node.removeAttribute(attr.name);
+        }
+      });
+
+      if (node.tagName === 'SPAN' && node.attributes.length === 0) {
+        var parent = node.parentNode;
+        while (node.firstChild) {
+          parent.insertBefore(node.firstChild, node);
+        }
+        parent.removeChild(node);
+      }
+    });
+
+    Array.from(wrapper.querySelectorAll('p, span, div')).forEach(function (node) {
+      node.style.fontFamily = "Arial, 'Helvetica Neue', Helvetica, sans-serif";
+      node.style.fontSize = '16px';
+      node.style.lineHeight = '1.5';
+    });
+
+    return wrapper.innerHTML;
+  }
+
+  function bindCkeditorPasteSanitizer() {
+    if (window.__ckeditorPasteSanitizerBound) {
+      return;
+    }
+
+    if (!window.CKEDITOR) {
+      setTimeout(bindCkeditorPasteSanitizer, 200);
+      return;
+    }
+
+    window.__ckeditorPasteSanitizerBound = true;
+    CKEDITOR.on('instanceReady', function (evt) {
+      evt.editor.on('paste', function (pasteEvt) {
+        if (!pasteEvt || !pasteEvt.data || typeof pasteEvt.data.dataValue !== 'string') {
+          return;
+        }
+
+        var cleaned = sanitizePastedHtml(pasteEvt.data.dataValue);
+        if (cleaned !== pasteEvt.data.dataValue) {
+          pasteEvt.data.dataValue = cleaned;
+        }
+      });
+    });
+  }
+
+  bindCkeditorPasteSanitizer();
+
   // Initialize GrapesJS editor with comprehensive configuration
   var editor = grapesjs.init({
     // ===== CORE EDITOR SETTINGS =====
@@ -443,11 +573,15 @@ JavaScript APIs Used:
         },
         options: {
           startupFocus: true,                     // Auto-focus editor on load
-          extraAllowedContent: "*(*);*{*}",       // Allow all classes and inline styles
+          extraAllowedContent: "a[!href,target,title,rel]",   // Allow anchor attributes while filtering Word styles
           allowedContent: true,                   // Disable auto-formatting and class removal
           enterMode: 2,                           // Use <br> tags instead of <p> for line breaks
           extraPlugins: "sharedspace,justify,colorbutton,panelbutton,font",  // Additional CKEditor plugins
           versionCheck: false,                    // Disable version checking
+          pasteFromWordRemoveFontStyles: true,          // Strip font metadata from Word paste
+          pasteFromWordRemoveStyles: true,               // Remove inline styling from Word paste
+          forcePasteAsPlainText: false,                  // Keep hyperlinks and structural markup
+          removeFormatAttributes: "style lang width height color align", // Additional cleanup for paste
           
           // --- CKEditor Toolbar Configuration ---
           toolbar: [
@@ -466,6 +600,111 @@ JavaScript APIs Used:
   var pnm = editor.Panels;        // Panel manager for adding custom toolbar buttons
   var cmdm = editor.Commands;     // Command manager for defining custom actions
 
+  var blockManager = editor.BlockManager;  // Block manager for drag-and-drop blocks
+
+  blockManager.add('image-caption-block', {
+    label: 'Image + Caption',
+    category: 'Media',
+    media: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <rect x="6" y="6" width="52" height="36" rx="4" ry="4" fill="#e3f2fd" stroke="#1565c0" stroke-width="2" />
+      <path d="M14 34l10-12 11 15 7-9 14 18H14z" fill="#1565c0" opacity="0.55" />
+      <circle cx="26" cy="20" r="4" fill="#1565c0" />
+      <rect x="12" y="48" width="40" height="4" rx="2" fill="#0d47a1" />
+      <rect x="18" y="54" width="28" height="4" rx="2" fill="#0d47a1" opacity="0.7" />
+    </svg>`,
+    content: `
+      <table class="image-caption-block" cellpadding="0" cellspacing="0" role="presentation" style="width:100%; text-align:center;">
+        <tbody>
+          <tr>
+            <td style="padding: 12px;">
+              <img data-gjs-type="image" src="https://placehold.co/600x350/1565c0/ffffff?text=Image" alt="Newsletter image" style="display:block; width:100%; max-width:600px; margin:0 auto 8px; border-radius:4px;" />
+              <p data-gjs-type="text" style="margin:0; font-size:14px; color:#4a4a4a; line-height:1.5;">Add a descriptive caption here</p>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    `,
+    select: true,
+  });
+
+  blockManager.add('image-left-text-block', {
+    label: 'Image Left + Text',
+    category: 'Media',
+    media: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <rect x="4" y="8" width="24" height="48" rx="3" fill="#90caf9" stroke="#1565c0" stroke-width="2" />
+      <rect x="34" y="12" width="26" height="6" rx="2" fill="#1565c0" />
+      <rect x="34" y="24" width="22" height="6" rx="2" fill="#1565c0" opacity="0.8" />
+      <rect x="34" y="36" width="18" height="6" rx="2" fill="#1565c0" opacity="0.6" />
+      <rect x="34" y="48" width="22" height="6" rx="2" fill="#1565c0" opacity="0.4" />
+    </svg>`,
+    content: `
+      <table class="image-left-text-block" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+        <tbody>
+          <tr>
+            <td width="40%" style="padding: 12px; vertical-align: top;">
+              <img data-gjs-type="image" src="https://placehold.co/260x260/0d47a1/ffffff?text=Image" alt="Feature image" style="display:block; width:100%; max-width:260px; border-radius:6px;" />
+            </td>
+            <td width="60%" style="padding: 12px 12px 12px 16px; vertical-align: top;">
+              <h3 data-gjs-type="text" style="margin:0 0 8px; font-size:18px; color:#0d47a1; font-family:'Helvetica Neue', Arial, sans-serif;">Headline Title</h3>
+              <p data-gjs-type="text" style="margin:0; font-size:14px; color:#4a4a4a; line-height:1.6;">Add supporting copy next to the image. Keep paragraphs concise and scannable for email clients.</p>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    `,
+    select: true,
+  });
+
+  editor.addStyle(`
+    .image-caption-block img {
+      display: block;
+      width: 100%;
+      height: auto;
+      margin: 0 auto 8px;
+      border-radius: 4px;
+    }
+    .image-caption-block p {
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      color: #4a4a4a;
+      line-height: 1.5;
+      margin: 0;
+    }
+    .image-left-text-block {
+      width: 100%;
+    }
+    .image-left-text-block td {
+      vertical-align: top;
+    }
+    .image-left-text-block img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 6px;
+    }
+    .image-left-text-block h3 {
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      margin: 0 0 8px;
+      font-size: 18px;
+      color: #0d47a1;
+    }
+    .image-left-text-block p {
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #4a4a4a;
+    }
+    @media only screen and (max-width: 600px) {
+      .image-left-text-block tr {
+        display: block;
+      }
+      .image-left-text-block td {
+        display: block;
+        width: 100% !important;
+        padding: 8px !important;
+      }
+    }
+  `);
   // ========================================================================
   // CSS SANITIZER - Remove problematic styles for email compatibility
   // ========================================================================
