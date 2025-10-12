@@ -19,7 +19,7 @@ def index():
 def upload():
     """Main newsletter upload page"""
     storage = StorageManager()
-    files = storage.list_files("newsletters/")
+    files = storage.list_files("")
     return render_template('upload.html', files=files)
 
 @newsletter_bp.route('/newsletter-upload', methods=['POST'])
