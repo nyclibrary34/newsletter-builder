@@ -139,8 +139,8 @@ class CloudinaryStorage(StorageInterface):
             year = current_date.strftime('%Y')
             month = current_date.strftime('%B')
 
-            # Create folder path: newsletters/YYYY/MMMM/
-            folder_path = f"newsletters/{year}/{month}"
+            # Create folder path: YYYY/MMMM/
+            folder_path = f"{year}/{month}"
             # Sanitize filename to remove percent-encoding
             filename = sanitize_filename(filename)
 
@@ -194,7 +194,7 @@ class CloudinaryStorage(StorageInterface):
         except Exception:
             return False
     
-    def list_files(self, prefix: str = "newsletters/") -> List[Dict[str, Any]]:
+    def list_files(self, prefix: str = "") -> List[Dict[str, Any]]:
         """List files from Cloudinary with prefix filter"""
         try:
             result = cloudinary.api.resources(
@@ -339,8 +339,8 @@ class LocalStorage(StorageInterface):
             year = current_date.strftime('%Y')
             month = current_date.strftime('%B')
 
-            # Create folder path: newsletters/YYYY/MMMM/
-            folder_path = f"newsletters/{year}/{month}"
+            # Create folder path: YYYY/MMMM/
+            folder_path = f"{year}/{month}"
             # Sanitize filename to remove percent-encoding
             filename = sanitize_filename(filename)
             relative_path = f"{folder_path}/{filename}"
@@ -434,7 +434,7 @@ class LocalStorage(StorageInterface):
             logger.error(f"Save failed for {file_id}: {e}")
             return False
     
-    def list_files(self, prefix: str = "newsletters/") -> List[Dict[str, Any]]:
+    def list_files(self, prefix: str = "") -> List[Dict[str, Any]]:
         """List files from local storage with prefix filter"""
         try:
             files = []
