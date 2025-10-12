@@ -3,10 +3,14 @@ import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 import os
+import logging
 import requests
 from urllib.parse import unquote
 from datetime import datetime
 from utils.storage import StorageManager
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 newsletter_bp = Blueprint('newsletter', __name__)
 
@@ -78,15 +82,22 @@ def get_file_content(file_id):
 
 @newsletter_bp.route('/delete/<path:file_id>')
 def delete_file(file_id):
-    """Delete a newsletter file"""
+    """Delete a newsletter file with improved error handling and user feedback"""
     try:
+        logger.info(f"Delete request received for: {file_id}")
         storage = StorageManager()
+
         if storage.delete(file_id):
-            flash('File successfully deleted')
+            flash('File successfully deleted', 'success')
+            logger.info(f"File deleted successfully: {file_id}")
         else:
-            flash('Failed to delete file')
+            flash('Unable to delete file. It may have already been deleted or moved.', 'warning')
+            logger.warning(f"Delete returned False for: {file_id}")
+
     except Exception as e:
-        flash(f"An error occurred: {e}")
+        logger.error(f"Delete error for {file_id}: {str(e)}", exc_info=True)
+        flash(f"An error occurred while deleting the file. Please try again or contact support if the problem persists.", 'error')
+
     return redirect(url_for('newsletter.upload'))
 
 @newsletter_bp.route('/download/<path:file_id>')

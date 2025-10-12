@@ -172,12 +172,67 @@ class CloudinaryStorage(StorageInterface):
         response.raise_for_status()
         return response.content
     
-    def delete(self, file_id: str) -> bool:
-        """Delete file from Cloudinary"""
+    def _try_delete(self, file_id: str) -> Optional[str]:
+        """
+        Attempt to delete a file from Cloudinary.
+
+        Args:
+            file_id: The public_id to try deleting
+
+        Returns:
+            Result status string ('ok', 'not found', etc.) or None if error
+        """
         try:
-            cloudinary.uploader.destroy(file_id, resource_type="raw")
-            return True
-        except Exception:
+            result = cloudinary.uploader.destroy(file_id, resource_type="raw")
+            return result.get('result')
+        except Exception as e:
+            logger.debug(f"Delete attempt failed for {file_id}: {str(e)}")
+            return None
+
+    def delete(self, file_id: str) -> bool:
+        """
+        Delete file from Cloudinary with fallback for different folder structures.
+
+        Handles both new (YYYY/MMMM/) and old (newsletters/YYYY/MMMM/) path formats.
+        """
+        try:
+            logger.info(f"Attempting to delete file: {file_id}")
+
+            # Try original path first
+            result = self._try_delete(file_id)
+            if result == 'ok':
+                logger.info(f"Successfully deleted: {file_id}")
+                return True
+            elif result == 'not found':
+                logger.warning(f"File not found with original path: {file_id}")
+
+            # Try with newsletters/ prefix (for old files)
+            if not file_id.startswith('newsletters/'):
+                alt_path = f"newsletters/{file_id}"
+                logger.info(f"Trying alternate path: {alt_path}")
+                result = self._try_delete(alt_path)
+                if result == 'ok':
+                    logger.info(f"Successfully deleted with alternate path: {alt_path}")
+                    return True
+                elif result == 'not found':
+                    logger.warning(f"File not found with alternate path: {alt_path}")
+
+            # Try without newsletters/ prefix (for files uploaded before folder structure change)
+            if file_id.startswith('newsletters/'):
+                alt_path = file_id.replace('newsletters/', '', 1)
+                logger.info(f"Trying path without newsletters prefix: {alt_path}")
+                result = self._try_delete(alt_path)
+                if result == 'ok':
+                    logger.info(f"Successfully deleted without newsletters prefix: {alt_path}")
+                    return True
+                elif result == 'not found':
+                    logger.warning(f"File not found without newsletters prefix: {alt_path}")
+
+            logger.error(f"Failed to delete file after trying all paths: {file_id}")
+            return False
+
+        except Exception as e:
+            logger.error(f"Delete failed for {file_id}: {str(e)}", exc_info=True)
             return False
     
     def save(self, file_id: str, content: bytes) -> bool:
@@ -382,22 +437,39 @@ class LocalStorage(StorageInterface):
             return f.read()
     
     def delete(self, file_id: str) -> bool:
-        """Delete file from local storage"""
+        """Delete file from local storage with improved error logging"""
         try:
+            logger.info(f"Attempting to delete file: {file_id}")
+
             file_path = self._resolve_existing_path(file_id)
-            if file_path and os.path.exists(file_path):
-                os.remove(file_path)
+            if not file_path:
+                logger.warning(f"File not found for deletion: {file_id}")
+                return False
 
-                # Clean up empty directories
-                dir_path = os.path.dirname(file_path)
-                try:
-                    os.removedirs(dir_path)
-                except OSError:
-                    pass  # Directory not empty, which is fine
+            if not os.path.exists(file_path):
+                logger.warning(f"Resolved path does not exist: {file_path}")
+                return False
 
-                return True
+            # Delete the file
+            os.remove(file_path)
+            logger.info(f"Successfully deleted file: {file_path}")
+
+            # Clean up empty directories
+            dir_path = os.path.dirname(file_path)
+            try:
+                os.removedirs(dir_path)
+                logger.info(f"Cleaned up empty directories: {dir_path}")
+            except OSError as e:
+                logger.debug(f"Could not remove directory {dir_path}: {str(e)}")
+                pass  # Directory not empty or other issue, which is fine
+
+            return True
+
+        except PermissionError as e:
+            logger.error(f"Permission denied deleting {file_id}: {str(e)}")
             return False
-        except Exception:
+        except Exception as e:
+            logger.error(f"Delete failed for {file_id}: {str(e)}", exc_info=True)
             return False
     
     def save(self, file_id: str, content: bytes) -> bool:
