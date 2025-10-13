@@ -19,6 +19,15 @@ def _get_int_env(name: str, default: int) -> int:
         return default
 
 
+def _get_float_env(name: str, default: float) -> float:
+    """Safely parse float environment values with fallback."""
+    value = os.environ.get(name, default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 class Config:
     """Base configuration class with type hints and validation."""
     
@@ -47,6 +56,7 @@ class Config:
     # Monitoring Configuration (optional)
     SENTRY_DSN: Optional[str] = os.environ.get('SENTRY_DSN')
     ENABLE_SENTRY: bool = os.environ.get('ENABLE_SENTRY', 'False').lower() == 'true'
+    SENTRY_TRACES_SAMPLE_RATE: float = _get_float_env('SENTRY_TRACES_SAMPLE_RATE', 0.1)
     
     # Security Configuration
     MAX_CONTENT_LENGTH: int = 16 * 1024 * 1024  # 16MB max file size

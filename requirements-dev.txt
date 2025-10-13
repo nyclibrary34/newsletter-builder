@@ -3,6 +3,7 @@
 
 # Error Monitoring (Development/Staging) - Works with GlitchTip
 sentry-sdk[flask]==2.19.2
+sentry-cli==2.56.1
 
 # Testing
 pytest==7.4.0

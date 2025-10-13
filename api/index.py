@@ -27,38 +27,40 @@ compress = Compress()
 
 def init_sentry(app: Flask) -> None:
     """Initialize Sentry monitoring if configured."""
-    sentry_enabled = app.config.get('ENABLE_SENTRY')
-    sentry_dsn = app.config.get('SENTRY_DSN')
-    
-    print(f"🔍 SENTRY STATUS CHECK:")
-    print(f"   ENABLE_SENTRY: {sentry_enabled}")
-    print(f"   SENTRY_DSN configured: {'Yes' if sentry_dsn else 'No'}")
-    
-    if sentry_enabled and sentry_dsn:
-        try:
-            import sentry_sdk
-            from sentry_sdk.integrations.flask import FlaskIntegration
-            
-            sentry_sdk.init(
-                dsn=sentry_dsn,
-                integrations=[FlaskIntegration()],
-                traces_sample_rate=0.1,  # Adjust based on needs
-                environment=os.environ.get('FLASK_ENV', 'development')
-            )
-            print("✅ SENTRY: ON - Monitoring initialized successfully")
-            app.logger.info("Sentry monitoring initialized")
-        except ImportError:
-            print("❌ SENTRY: OFF - SDK not available")
-            app.logger.warning("Sentry SDK not available - monitoring disabled")
-        except Exception as e:
-            print(f"❌ SENTRY: FAILED - {str(e)}")
-            app.logger.error(f"Failed to initialize Sentry: {str(e)}")
-    else:
-        print("❌ SENTRY: OFF - Not configured or disabled")
-        if not sentry_enabled:
-            print("   Reason: ENABLE_SENTRY is false or not set")
-        if not sentry_dsn:
-            print("   Reason: SENTRY_DSN is not configured")
+    sentry_enabled = app.config.get("ENABLE_SENTRY")
+    sentry_dsn = app.config.get("SENTRY_DSN")
+
+    if not sentry_enabled:
+        app.logger.info("Sentry disabled via ENABLE_SENTRY flag")
+        return
+
+    if not sentry_dsn:
+        app.logger.warning("Sentry DSN missing; skipping monitoring setup")
+        return
+
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+    except ImportError:
+        app.logger.warning("Sentry SDK not installed; monitoring disabled")
+        return
+
+    traces_sample_rate = app.config.get("SENTRY_TRACES_SAMPLE_RATE", 0.1)
+    try:
+        traces_sample_rate = float(traces_sample_rate)
+    except (TypeError, ValueError):
+        traces_sample_rate = 0.1
+
+    try:
+        sentry_sdk.init(
+            dsn=sentry_dsn,
+            integrations=[FlaskIntegration()],
+            traces_sample_rate=traces_sample_rate,
+            environment=os.environ.get("FLASK_ENV", "development"),
+        )
+        app.logger.info("Sentry monitoring initialized")
+    except Exception as exc:
+        app.logger.error(f"Failed to initialize Sentry: {exc}")
 
 
 def create_app(config_name: Optional[str] = None) -> Flask:
