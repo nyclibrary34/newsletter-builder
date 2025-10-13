@@ -121,147 +121,45 @@ JavaScript APIs Used:
     font-size: 16px;                    /* Icon size */
   }
 
-  /* ===== FILENAME DISPLAY STYLES ===== */
-  .filename-display {
-    flex-grow: 1;                       /* Take available horizontal space */
-    text-align: center;                 /* Center-align text */
-    font-weight: 600;                   /* Semi-bold weight */
-    font-size: 18px;                    /* Larger font size */
-    margin: 0 40px;                     /* Horizontal margins */
-    color: #ecf0f1;                     /* Light gray text color */
-  }
-
   /* ===== HEADER SPACER FOR LAYOUT BALANCE ===== */
   .header-spacer {
-    min-width: 80px;                    /* Match back button width for balance */
+    min-width: 140px;                   /* Match back button width for balance */
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
   }
 
-  /* ===== FILENAME RENAME STYLES ===== */
+  .autosave-status {
+    font-size: 12px;
+    color: #bdc3c7;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    transition: color 0.2s ease;
+  }
+
+  .autosave-status.autosave-status--dirty {
+    color: #ffb74d;
+  }
+
+  .autosave-status.autosave-status--saving {
+    color: #64b5f6;
+  }
+
+  .autosave-status.autosave-status--error {
+    color: #ef5350;
+  }
+
+  .autosave-status.autosave-status--success {
+    color: #81c784;
+  }
+
+  /* ===== FILENAME DISPLAY ===== */
   .filename-container {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
     flex-grow: 1;
-  }
-
-  .filename-text {
-    font-weight: 600;
-    font-size: 18px;
-    color: #ecf0f1;
-    max-width: 400px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .rename-button {
-    background: none;
-    border: none;
-    color: #ecf0f1;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    opacity: 0.7;
-  }
-
-  .rename-button:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-    opacity: 1;
-  }
-
-  .rename-button i {
-    font-size: 16px;
-  }
-
-  /* Edit mode styles */
-  .filename-edit-container {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .filename-input {
-    padding: 6px 12px;
-    font-size: 16px;
-    border: 2px solid #3498db;
-    border-radius: 4px;
-    background-color: white;
-    color: #2c3e50;
-    min-width: 250px;
-    max-width: 400px;
-  }
-
-  .filename-input:focus {
-    outline: none;
-    border-color: #2980b9;
-    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
-  }
-
-  .filename-input.error {
-    border-color: #e74c3c;
-  }
-
-  .edit-action-buttons {
-    display: flex;
-    gap: 6px;
-  }
-
-  .edit-button {
-    padding: 6px 10px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .save-button {
-    background-color: #27ae60;
-    color: white;
-  }
-
-  .save-button:hover:not(:disabled) {
-    background-color: #229954;
-  }
-
-  .cancel-button {
-    background-color: #95a5a6;
-    color: white;
-  }
-
-  .cancel-button:hover {
-    background-color: #7f8c8d;
-  }
-
-  .edit-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .edit-button i {
-    font-size: 16px;
-  }
-
-  .error-message {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    margin-top: 4px;
-    color: #e74c3c;
-    font-size: 12px;
-    background-color: rgba(255, 255, 255, 0.95);
-    padding: 4px 8px;
-    border-radius: 4px;
-    white-space: nowrap;
-    z-index: 1000;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
 </style>
@@ -279,13 +177,12 @@ JavaScript APIs Used:
     Back
   </a>
   
-  <!-- File name display: Shows current file being edited with rename capability -->
-  <div class="filename-container" id="filename-container">
-    <!-- Will be populated by JavaScript -->
-  </div>
+  <div class="filename-container" aria-hidden="true"></div>
   
   <!-- Spacer: Provides visual balance for centered file name -->
-  <div class="header-spacer"></div>
+  <div class="header-spacer">
+    <span class="autosave-status" id="autosave-status" role="status" aria-live="polite"></span>
+  </div>
 </div>
 
 
@@ -311,9 +208,6 @@ JavaScript APIs Used:
 
 <!-- HTML Processor: Client-side CSS inlining and ID cleanup (replaces juice server) -->
 <script src="{{ url_for('static', filename='js/html-processor.js') }}"></script>
-
-<!-- Filename Manager: Unified filename management module -->
-<script src="{{ url_for('static', filename='js/filename-manager.js') }}"></script>
 
 <!-- ========================================================================
      GRAPESJS EDITOR INITIALIZATION AND CONFIGURATION
@@ -602,6 +496,235 @@ JavaScript APIs Used:
 
   var blockManager = editor.BlockManager;  // Block manager for drag-and-drop blocks
 
+  const fileId = "{{ file_id }}";              // File identifier shared across save routines
+
+  function ensureHtmlExtension(name) {
+    if (!name) {
+      return 'newsletter.html';
+    }
+    return /\.html?$/i.test(name) ? name : `${name}.html`;
+  }
+
+  function getCurrentFileName() {
+    if (fileId) {
+      const segment = fileId.split('/').pop();
+      if (segment) {
+        return ensureHtmlExtension(segment);
+      }
+    }
+    return 'newsletter.html';
+  }
+
+  document.title = 'Newsletter Editor';
+
+  const AUTOSAVE_DELAY = 1500;
+  const AUTOSAVE_RETRY_DELAY = 5000;
+
+  let autosaveTimer = null;
+  let autosaveEnabled = false;
+  let isSaving = false;
+  let pendingSave = false;
+  let hasPendingChanges = false;
+  let lastSavedSnapshot = null;
+
+  const autosaveStatusEl = document.getElementById('autosave-status');
+
+  function setAutosaveStatus(message, state) {
+    if (!autosaveStatusEl) {
+      return;
+    }
+
+    autosaveStatusEl.textContent = message;
+
+    const stateClasses = [
+      'autosave-status--dirty',
+      'autosave-status--saving',
+      'autosave-status--error',
+      'autosave-status--success',
+    ];
+
+    stateClasses.forEach((cls) => autosaveStatusEl.classList.remove(cls));
+
+    if (state) {
+      autosaveStatusEl.classList.add(`autosave-status--${state}`);
+    }
+  }
+
+  function buildSavePayload() {
+    if (!editor) {
+      return { fullHtml: '', snapshot: '' };
+    }
+
+    let html = editor.getHtml();
+    html = ensureAlignmentStyles(html);         // Preserve alignment before saving
+
+    const css = editor.getCss();
+    const fullHtml = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>${css}</style>
+</head>
+<body>${html}</body>
+</html>`;
+
+    return {
+      fullHtml,
+      snapshot: fullHtml.trim(),
+    };
+  }
+
+  async function performSave() {
+    if (!fileId) {
+      console.warn('Cannot save without a file identifier.');
+      hasPendingChanges = false;
+      return { saved: false, skipped: true };
+    }
+
+    if (isSaving) {
+      return { saved: false, skipped: true, deferred: true };
+    }
+
+    const { fullHtml, snapshot } = buildSavePayload();
+
+    if (!snapshot || (lastSavedSnapshot && snapshot === lastSavedSnapshot)) {
+      hasPendingChanges = false;
+      return { saved: false, skipped: true };
+    }
+
+    isSaving = true;
+
+    try {
+      const response = await fetch(`/save/${fileId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/html",
+        },
+        body: fullHtml,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Save request failed with status ${response.status}`);
+      }
+
+      lastSavedSnapshot = snapshot;
+      hasPendingChanges = false;
+
+      return { saved: true, skipped: false };
+    } catch (error) {
+      hasPendingChanges = true;
+      throw error;
+    } finally {
+      isSaving = false;
+
+      if (pendingSave) {
+        pendingSave = false;
+        if (autosaveEnabled) {
+          scheduleAutosave(AUTOSAVE_DELAY);
+        }
+      }
+    }
+  }
+
+  function scheduleAutosave(delay = AUTOSAVE_DELAY) {
+    if (!autosaveEnabled) {
+      hasPendingChanges = true;
+      return;
+    }
+
+    hasPendingChanges = true;
+    setAutosaveStatus('Unsaved changes...', 'dirty');
+
+    if (isSaving) {
+      pendingSave = true;
+      return;
+    }
+
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer);
+    }
+
+    if (delay <= 0) {
+      triggerAutosave();
+      return;
+    }
+
+    autosaveTimer = window.setTimeout(triggerAutosave, delay);
+  }
+
+  function triggerAutosave() {
+    if (!autosaveEnabled) {
+      return;
+    }
+
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+    }
+
+    setAutosaveStatus('Saving...', 'saving');
+
+    performSave()
+      .then(({ saved, skipped }) => {
+        if (skipped) {
+          setAutosaveStatus('All changes saved', 'success');
+          return;
+        }
+
+        setAutosaveStatus('Saved just now', 'success');
+
+        window.setTimeout(() => {
+          if (!hasPendingChanges) {
+            setAutosaveStatus('All changes saved', 'success');
+          }
+        }, 2500);
+      })
+      .catch((error) => {
+        console.error('Autosave failed:', error);
+        setAutosaveStatus('Autosave failed. Retrying...', 'error');
+
+        if (autosaveEnabled) {
+          autosaveTimer = window.setTimeout(triggerAutosave, AUTOSAVE_RETRY_DELAY);
+        }
+      });
+  }
+
+  function initializeAutosaveBaseline() {
+    setAutosaveStatus('Preparing autosave...', 'saving');
+
+    window.setTimeout(() => {
+      const { snapshot } = buildSavePayload();
+      lastSavedSnapshot = snapshot;
+      hasPendingChanges = false;
+      autosaveEnabled = true;
+      setAutosaveStatus('All changes saved', 'success');
+    }, 500);
+  }
+
+  const autosaveTrackedEvents = [
+    'update',
+    'component:add',
+    'component:remove',
+    'component:update',
+    'component:styleUpdate',
+    'asset:add',
+    'asset:remove',
+    'asset:upload:response',
+    'style:change',
+    'canvas:drop-end',
+  ];
+
+  autosaveTrackedEvents.forEach((eventName) => {
+    editor.on(eventName, () => scheduleAutosave());
+  });
+
+  window.addEventListener('beforeunload', (event) => {
+    if (isSaving || hasPendingChanges) {
+      event.preventDefault();
+      event.returnValue = 'Your recent changes might not be saved yet. Do you want to leave?';
+    }
+  });
+
   blockManager.add('image-caption-block', {
     label: 'Image + Caption',
     category: 'Media',
@@ -645,8 +768,68 @@ JavaScript APIs Used:
               <img data-gjs-type="image" src="https://placehold.co/260x260/0d47a1/ffffff?text=Image" alt="Feature image" style="display:block; width:100%; max-width:260px; border-radius:6px;" />
             </td>
             <td width="60%" style="padding: 12px 12px 12px 16px; vertical-align: top;">
-              <h3 data-gjs-type="text" style="margin:0 0 8px; font-size:18px; color:#0d47a1; font-family:'Helvetica Neue', Arial, sans-serif;">Headline Title</h3>
+              <h3 data-gjs-type="text" style="margin:0 0 8px; font-size:14px; color:#000000; font-family:Arial, 'Helvetica Neue', sans-serif;">Headline Title</h3>
               <p data-gjs-type="text" style="margin:0; font-size:14px; color:#4a4a4a; line-height:1.6;">Add supporting copy next to the image. Keep paragraphs concise and scannable for email clients.</p>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    `,
+    select: true,
+  });
+
+  blockManager.add('image-right-text-block', {
+    label: 'Image Right + Text',
+    category: 'Media',
+    media: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <rect x="36" y="8" width="24" height="48" rx="3" fill="#90caf9" stroke="#1565c0" stroke-width="2" />
+      <rect x="4" y="12" width="26" height="6" rx="2" fill="#1565c0" />
+      <rect x="8" y="24" width="22" height="6" rx="2" fill="#1565c0" opacity="0.8" />
+      <rect x="12" y="36" width="18" height="6" rx="2" fill="#1565c0" opacity="0.6" />
+      <rect x="8" y="48" width="22" height="6" rx="2" fill="#1565c0" opacity="0.4" />
+    </svg>`,
+    content: `
+      <table class="image-right-text-block" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+        <tbody>
+          <tr>
+            <td width="60%" style="padding: 12px 16px 12px 12px; vertical-align: top;">
+              <h3 data-gjs-type="text" style="margin:0 0 8px; font-size:14px; color:#000000; font-family:Arial, 'Helvetica Neue', sans-serif;">Highlight Title</h3>
+              <p data-gjs-type="text" style="margin:0; font-size:14px; color:#4a4a4a; line-height:1.6;">Share your supporting copy here so readers can skim the key details before exploring the image on the right.</p>
+            </td>
+            <td width="40%" style="padding: 12px; vertical-align: top;">
+              <img data-gjs-type="image" src="https://placehold.co/260x260/0d47a1/ffffff?text=Image" alt="Feature image" style="display:block; width:100%; max-width:260px; border-radius:6px;" />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    `,
+    select: true,
+  });
+
+  blockManager.add('bullet-list-block', {
+    label: 'Bulleted Highlights',
+    category: 'Content',
+    media: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <rect x="8" y="12" width="48" height="40" rx="6" fill="#e3f2fd" stroke="#1565c0" stroke-width="2" />
+      <circle cx="20" cy="26" r="3" fill="#1565c0" />
+      <rect x="26" y="24" width="22" height="4" rx="2" fill="#1565c0" opacity="0.8" />
+      <circle cx="20" cy="36" r="3" fill="#1565c0" />
+      <rect x="26" y="34" width="18" height="4" rx="2" fill="#1565c0" opacity="0.65" />
+      <circle cx="20" cy="46" r="3" fill="#1565c0" />
+      <rect x="26" y="44" width="24" height="4" rx="2" fill="#1565c0" opacity="0.5" />
+    </svg>`,
+    content: `
+      <table class="bullet-list-block" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+        <tbody>
+          <tr>
+            <td style="padding: 20px 24px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #ffffff;">
+              <h3 data-gjs-type="text" style="margin:0 0 8px; font-size:18px; color:#0d47a1; font-family:Arial, 'Helvetica Neue', sans-serif;">Key Highlights</h3>
+              <p data-gjs-type="text" style="margin:0 0 12px; font-size:14px; color:#4a4a4a; line-height:1.6; font-family:Arial, 'Helvetica Neue', sans-serif;">Use this section to summarize important updates or takeaways your readers should remember.</p>
+              <ul data-gjs-type="text" style="margin:0; padding-left:20px; font-size:14px; color:#37474f; line-height:1.6; font-family:Arial, 'Helvetica Neue', sans-serif;">
+                <li>Lead with a concise, action-oriented highlight for readers.</li>
+                <li>Explain why the update matters or what the next step is.</li>
+                <li>Offer supporting data, dates, or links where relevant.</li>
+              </ul>
             </td>
           </tr>
         </tbody>
@@ -664,7 +847,7 @@ JavaScript APIs Used:
       border-radius: 4px;
     }
     .image-caption-block p {
-      font-family: "Helvetica Neue", Arial, sans-serif;
+      font-family: Arial, "Helvetica Neue", sans-serif;
       color: #4a4a4a;
       line-height: 1.5;
       margin: 0;
@@ -682,23 +865,62 @@ JavaScript APIs Used:
       border-radius: 6px;
     }
     .image-left-text-block h3 {
-      font-family: "Helvetica Neue", Arial, sans-serif;
+      font-family: Arial, "Helvetica Neue", sans-serif;
       margin: 0 0 8px;
-      font-size: 18px;
-      color: #0d47a1;
+      font-size: 14px;
+      color: #000000;
     }
     .image-left-text-block p {
-      font-family: "Helvetica Neue", Arial, sans-serif;
+      font-family: Arial, "Helvetica Neue", sans-serif;
       margin: 0;
       font-size: 14px;
       line-height: 1.6;
       color: #4a4a4a;
+    }
+    .image-right-text-block {
+      width: 100%;
+    }
+    .image-right-text-block td {
+      vertical-align: top;
+    }
+    .image-right-text-block img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 6px;
+    }
+    .image-right-text-block h3 {
+      font-family: Arial, "Helvetica Neue", sans-serif;
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: #000000;
+    }
+    .image-right-text-block p {
+      font-family: Arial, "Helvetica Neue", sans-serif;
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #4a4a4a;
+    }
+    .bullet-list-block li {
+      margin-bottom: 8px;
+    }
+    .bullet-list-block li:last-child {
+      margin-bottom: 0;
     }
     @media only screen and (max-width: 600px) {
       .image-left-text-block tr {
         display: block;
       }
       .image-left-text-block td {
+        display: block;
+        width: 100% !important;
+        padding: 8px !important;
+      }
+      .image-right-text-block tr {
+        display: block;
+      }
+      .image-right-text-block td {
         display: block;
         width: 100% !important;
         padding: 8px !important;
@@ -784,7 +1006,7 @@ JavaScript APIs Used:
   // SAVE PROJECT COMMAND - Save current editor content to server
   // ========================================================================
   cmdm.add("save-project", {
-    run: function (editor, sender) {
+    run: async function (editor, sender) {
       sender.set("active", 0);                    // Deactivate button after click
       
       // --- Show Loading State ---
@@ -798,63 +1020,50 @@ JavaScript APIs Used:
         }
       });
       
-      // --- Extract Content from Editor ---
-      let html = editor.getHtml();                // Get HTML content from canvas
-      let css = editor.getCss();                  // Get CSS styles from editor
+      setAutosaveStatus('Saving...', 'saving');
       
-      // IMPORTANT: Don't sanitize CSS for saving - only sanitize for export
-      // This preserves all styles when reloading the editor
-      
-      // --- Ensure alignment styles are preserved ---
-      html = ensureAlignmentStyles(html);         // Add inline styles for logos/icons
-      
-      // --- Construct Complete HTML Document ---
-      // Save with full CSS to preserve all styles
-      const fullHtml = `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>${css}</style>
-</head>
-<body>${html}</body>
-</html>`;
-      
-      // --- Send Save Request to Server ---
-      const fileId = "{{ file_id }}";             // File identifier from template variable
-      fetch(`/save/${fileId}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "text/html",            // Send as HTML content
-        },
-        body: fullHtml,                           // Complete HTML document
-      }).then((response) => {
-        // --- Handle Successful Save ---
-        if (response.ok) {
+      try {
+        const result = await performSave();
+        
+        if (result.deferred) {
+          setAutosaveStatus('Autosave in progress...', 'saving');
           Swal.fire({
-            icon: 'success',
-            title: 'Success!',
-            text: 'Project saved successfully!',
-            timer: 2000,                          // Auto-close after 2 seconds
-            showConfirmButton: false
+            icon: 'info',
+            title: 'Save In Progress',
+            text: 'An autosave is already running. Your changes will be saved momentarily.',
+            confirmButtonColor: '#10b981'
           });
-        } else {
-          // --- Handle Server Error ---
-          Swal.fire({
-            icon: 'error',
-            title: 'Error!',
-            text: 'An error occurred while saving the project.',
-            confirmButtonColor: '#d33'            // Red confirm button
-          });
+          return;
         }
-      }).catch((error) => {
-        // --- Handle Network Error ---
+        
+        Swal.fire({
+          icon: 'success',
+          title: 'Success!',
+          text: result.skipped ? 'No changes detected. All updates are already saved.' : 'Project saved successfully!',
+          timer: 2000,                          // Auto-close after 2 seconds
+          showConfirmButton: false
+        });
+        
+        if (result.skipped) {
+          setAutosaveStatus('All changes saved', 'success');
+        } else {
+          setAutosaveStatus('Saved just now', 'success');
+          window.setTimeout(() => {
+            if (!hasPendingChanges) {
+              setAutosaveStatus('All changes saved', 'success');
+            }
+          }, 2500);
+        }
+      } catch (error) {
+        console.error('Manual save failed:', error);
         Swal.fire({
           icon: 'error',
-          title: 'Network Error!',
-          text: 'Failed to save project. Please check your connection.',
+          title: 'Error!',
+          text: 'Failed to save project. Please try again.',
           confirmButtonColor: '#d33'              // Red confirm button
         });
-      });
+        setAutosaveStatus('Save failed. Please retry.', 'error');
+      }
     },
   });
   // ========================================================================
@@ -938,10 +1147,6 @@ JavaScript APIs Used:
         // --- Construct Complete HTML Document ---
         const fullHtml = `<!doctype html><html><head><style>${criticalCss}</style></head><body>${html}</body></html>`;
         
-        // --- Prepare File Information ---
-        const fileId = "{{ file_id }}";             // File identifier from template
-        const fileName = fileId.split("/").pop();   // Extract filename from path
-        
         // --- Format HTML before processing ---
         let formattedHtml = fullHtml;
         try {
@@ -953,8 +1158,7 @@ JavaScript APIs Used:
         }
         
         // --- Process HTML with Client-side Processor ---
-        // Use the filename from FilenameManager
-        const exportFilename = window.FilenameManager ? window.FilenameManager.getFilename() : fileName;
+        const exportFilename = getCurrentFileName();
         const result = window.HTMLProcessor.processAndDownload(formattedHtml, exportFilename);
         
         if (!result.success) {
@@ -998,223 +1202,6 @@ JavaScript APIs Used:
       },
     },
   ]);
-
-  // ========================================================================
-  // INITIALIZE FILENAME MANAGER (Using new module)
-  // ========================================================================
-  let globalFilenameManager = null;
-  
-  // Old FilenameManager object kept for compatibility with export function
-  const FilenameManager = {
-    currentFilename: '',
-    isEditing: false,
-    
-    // Initialize wrapper that creates new manager
-    init() {
-      const fileId = "{{ file_id }}";
-      const initialName = fileId ? fileId.split('/').pop() : 'Untitled.html';
-      
-      // Ensure .html extension
-      const fullName = initialName.endsWith('.html') ? initialName : initialName + '.html';
-      
-      // Create fileKey from public_id or filename
-      const fileKey = fileId ? fileId.replace(/\//g, '_') : window.FilenameManager.utils.stripHtmlExt(fullName).toLowerCase();
-      
-      // Create new FilenameManager instance
-      globalFilenameManager = new window.FilenameManager({
-        container: '#filename-container',
-        getInitialName: () => fullName,
-        fileKey: fileKey,
-        storage: 'local',
-        onNameChange: (newFullName, context) => {
-          // Update document title
-          document.title = `Newsletter Editor - ${newFullName}`;
-          // Update legacy currentFilename for backward compatibility
-          FilenameManager.currentFilename = newFullName;
-        },
-        messages: {
-          successTitle: 'Filename Updated',
-          successText: 'File has been renamed to',
-          invalidTitle: 'Invalid Filename',
-          toast: true,
-          toastTimer: 1500
-        }
-      });
-      
-      globalFilenameManager.init();
-      this.currentFilename = globalFilenameManager.getCurrentFullName();
-    },
-    
-    // Render the filename display or edit mode
-    render() {
-      const container = document.getElementById('filename-container');
-      
-      if (this.isEditing) {
-        container.innerHTML = `
-          <div class="filename-edit-container" style="position: relative;">
-            <input type="text" 
-                   class="filename-input" 
-                   id="filename-input" 
-                   value="${this.escapeHtml(this.currentFilename)}"
-                   placeholder="Enter filename..."
-                   aria-label="Filename">
-            <div class="edit-action-buttons">
-              <button class="edit-button save-button" 
-                      onclick="FilenameManager.save()" 
-                      title="Save (Enter)"
-                      aria-label="Save filename">
-                <i class="bi bi-check-lg"></i>
-              </button>
-              <button class="edit-button cancel-button" 
-                      onclick="FilenameManager.cancel()" 
-                      title="Cancel (Escape)"
-                      aria-label="Cancel editing">
-                <i class="bi bi-x-lg"></i>
-              </button>
-            </div>
-            <div id="error-message" class="error-message" style="display: none;"></div>
-          </div>
-        `;
-        
-        // Set up input event handlers
-        const input = document.getElementById('filename-input');
-        input.focus();
-        input.select();
-        
-        input.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            this.save();
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            this.cancel();
-          }
-        });
-        
-        // Clear error on input change
-        input.addEventListener('input', () => {
-          this.hideError();
-        });
-      } else {
-        container.innerHTML = `
-          <span class="filename-text" title="${this.escapeHtml(this.currentFilename)}">
-            ${this.escapeHtml(this.currentFilename)}
-          </span>
-          <button class="rename-button" 
-                  onclick="FilenameManager.startEdit()" 
-                  title="Rename file"
-                  aria-label="Rename file">
-            <i class="bi bi-pencil"></i>
-          </button>
-        `;
-      }
-    },
-    
-    // Start editing mode
-    startEdit() {
-      this.isEditing = true;
-      this.render();
-    },
-    
-    // Save the new filename
-    save() {
-      const input = document.getElementById('filename-input');
-      let newName = input.value.trim();
-      
-      // Validation
-      if (!newName) {
-        this.showError('Filename cannot be empty');
-        return;
-      }
-      
-      // Ensure .html extension
-      if (!newName.endsWith('.html')) {
-        newName += '.html';
-      }
-      
-      // Validate characters (allow letters, numbers, spaces, dashes, underscores)
-      const validPattern = /^[a-zA-Z0-9\s\-_.]+$/;
-      if (!validPattern.test(newName)) {
-        this.showError('Invalid characters. Use only letters, numbers, spaces, dashes, and underscores');
-        return;
-      }
-      
-      // Update filename
-      this.currentFilename = newName;
-      this.isEditing = false;
-      
-      // Store in localStorage
-      const fileId = "{{ file_id }}";
-      if (fileId) {
-        localStorage.setItem(`filename_${fileId}`, newName);
-      }
-      
-      // Show success message
-      Swal.fire({
-        icon: 'success',
-        title: 'Renamed!',
-        text: `File renamed to "${newName}"`,
-        timer: 1500,
-        showConfirmButton: false,
-        position: 'top-end',
-        toast: true
-      });
-      
-      this.render();
-    },
-    
-    // Cancel editing
-    cancel() {
-      this.isEditing = false;
-      this.hideError();
-      this.render();
-    },
-    
-    // Show error message
-    showError(message) {
-      const errorEl = document.getElementById('error-message');
-      if (errorEl) {
-        errorEl.textContent = message;
-        errorEl.style.display = 'block';
-        
-        const input = document.getElementById('filename-input');
-        if (input) {
-          input.classList.add('error');
-        }
-      }
-    },
-    
-    // Hide error message
-    hideError() {
-      const errorEl = document.getElementById('error-message');
-      if (errorEl) {
-        errorEl.style.display = 'none';
-      }
-      
-      const input = document.getElementById('filename-input');
-      if (input) {
-        input.classList.remove('error');
-      }
-    },
-    
-    // Escape HTML for safe display
-    escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    },
-    
-    // Get current filename for export
-    getFilename() {
-      return this.currentFilename;
-    }
-  };
-  
-  // Initialize filename manager
-  FilenameManager.init();
-  
-  // Make it globally accessible
-  window.FilenameManager = FilenameManager;
 
   // ========================================================================
   // HTML FORMATTER - Format HTML with proper indentation
@@ -1301,10 +1288,13 @@ JavaScript APIs Used:
   // EDITOR READY EVENT - Load existing content when editor initializes
   // ========================================================================
   editor.onReady(function () {
-    // --- Load Existing Newsletter Content from Storage ---
-    const fileId = "{{ file_id }}";              // Get file identifier from template
+    setAutosaveStatus('Loading content...', 'saving');
+
+    const finalizeLoad = () => {
+      initializeAutosaveBaseline();
+    };
+
     if (fileId) {
-      // --- Fetch Content from Storage Backend ---
       fetch(
         `/content/${fileId}?_=${new Date().getTime()}`
       )
@@ -1361,7 +1351,10 @@ JavaScript APIs Used:
             text: 'Could not load existing content. Starting with empty template.',
             confirmButtonColor: '#10b981'       // Green confirm button
           });
-        });
+        })
+        .finally(() => finalizeLoad());
+    } else {
+      finalizeLoad();
     }
   });
 </script>

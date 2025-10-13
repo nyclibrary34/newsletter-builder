@@ -12,6 +12,8 @@ import cloudinary.utils
 import requests
 from werkzeug.utils import secure_filename
 from cloudinary.exceptions import Error as CloudinaryError
+import time
+from threading import RLock
 
 
 def _build_storage_candidate_paths(file_id: str) -> List[str]:
@@ -360,23 +362,33 @@ class LocalStorage(StorageInterface):
 class StorageManager:
     """Factory and manager class for storage implementations"""
     
+    _list_cache: Dict[str, Dict[str, Any]] = {}
+    _cache_lock: RLock = RLock()
+    
     def __init__(self, storage_type: str = None, local_path: str = None):
         if storage_type is None:
             storage_type = current_app.config.get('STORAGE_TYPE', 'cloudinary')
         
         if local_path is None:
             local_path = current_app.config.get('LOCAL_STORAGE_PATH', 'static/files')
-        
-        if storage_type.lower() == 'local':
+
+        normalized_type = storage_type.lower()
+
+        if normalized_type == 'local':
             self.storage = LocalStorage(local_path)
-        elif storage_type.lower() == 'cloudinary':
+        elif normalized_type == 'cloudinary':
             self.storage = CloudinaryStorage()
         else:
             raise ValueError(f"Unsupported storage type: {storage_type}")
+
+        self.storage_type = normalized_type
     
     def upload(self, file: IO, filename: str) -> Dict[str, Any]:
         """Upload a file using the configured storage backend"""
-        return self.storage.upload(file, filename)
+        result = self.storage.upload(file, filename)
+        if result.get('success'):
+            self._invalidate_cache()
+        return result
     
     def download(self, file_id: str) -> bytes:
         """Download file content using the configured storage backend"""
@@ -384,17 +396,61 @@ class StorageManager:
     
     def delete(self, file_id: str) -> bool:
         """Delete a file using the configured storage backend"""
-        return self.storage.delete(file_id)
+        deleted = self.storage.delete(file_id)
+        if deleted:
+            self._invalidate_cache()
+        return deleted
     
     def save(self, file_id: str, content: bytes) -> bool:
         """Save/overwrite file content using the configured storage backend"""
-        return self.storage.save(file_id, content)
+        saved = self.storage.save(file_id, content)
+        if saved:
+            self._invalidate_cache()
+        return saved
+
+    def _cache_key(self, prefix: str) -> str:
+        return f"{self.storage_type}:{prefix or '__root__'}"
+
+    def _get_cache_ttl(self) -> int:
+        ttl = current_app.config.get('STORAGE_CACHE_TTL', 120)
+        try:
+            ttl = int(ttl)
+        except (TypeError, ValueError):
+            ttl = 120
+        return max(ttl, 0)
+
+    def _invalidate_cache(self) -> None:
+        ttl = self._get_cache_ttl()
+        if ttl <= 0:
+            return
+        cache_prefix = f"{self.storage_type}:"
+        with self._cache_lock:
+            keys_to_delete = [key for key in self._list_cache if key.startswith(cache_prefix)]
+            for key in keys_to_delete:
+                self._list_cache.pop(key, None)
     
     def list_files(self, prefix: str = "") -> List[Dict[str, Any]]:
         """List files using the configured storage backend"""
-        return self.storage.list_files(prefix)
+        ttl = self._get_cache_ttl()
+        cache_key = self._cache_key(prefix)
+
+        if ttl > 0:
+            with self._cache_lock:
+                cached_entry = self._list_cache.get(cache_key)
+                if cached_entry and (time.time() - cached_entry['timestamp'] < ttl):
+                    return cached_entry['data']
     
+        files = self.storage.list_files(prefix)
+
+        if ttl > 0:
+            with self._cache_lock:
+                self._list_cache[cache_key] = {
+                    'timestamp': time.time(),
+                    'data': files
+                }
+
+        return files
+
     def get_file_url(self, file_id: str) -> str:
         """Get file URL using the configured storage backend"""
         return self.storage.get_file_url(file_id)
-

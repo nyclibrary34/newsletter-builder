@@ -10,6 +10,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _get_int_env(name: str, default: int) -> int:
+    """Safely parse integer environment values with fallback."""
+    value = os.environ.get(name, default)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 class Config:
     """Base configuration class with type hints and validation."""
     
@@ -29,6 +38,11 @@ class Config:
     
     # External Services (optional)
     BROWSERLESS_TOKEN: Optional[str] = os.environ.get('BROWSERLESS_TOKEN')
+    
+    # Performance Tuning
+    STATIC_CACHE_TIMEOUT: int = _get_int_env('STATIC_CACHE_TIMEOUT', 604800)  # 7 days
+    STORAGE_CACHE_TTL: int = _get_int_env('STORAGE_CACHE_TTL', 120)  # 2 minutes
+    ENABLE_COMPRESSION: bool = os.environ.get('ENABLE_COMPRESSION', 'True').lower() == 'true'
     
     # Monitoring Configuration (optional)
     SENTRY_DSN: Optional[str] = os.environ.get('SENTRY_DSN')

@@ -9,6 +9,7 @@ import os
 import sys
 from datetime import datetime
 from typing import Optional
+from flask_compress import Compress
 
 # Add parent directory to path BEFORE importing local modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,6 +21,8 @@ from app.config.settings import get_config
 from routes.main import main_bp
 from routes.newsletter import newsletter_bp
 from routes.tools import tools_bp
+
+compress = Compress()
 
 
 def init_sentry(app: Flask) -> None:
@@ -83,9 +86,19 @@ def create_app(config_name: Optional[str] = None) -> Flask:
     
     config_class = get_config(config_name)
     app.config.from_object(config_class)
-    
+    app.config.setdefault('JSON_SORT_KEYS', False)
+    static_cache_timeout = app.config.get('STATIC_CACHE_TIMEOUT', 604800)
+    try:
+        static_cache_timeout = int(static_cache_timeout)
+    except (TypeError, ValueError):
+        static_cache_timeout = 604800
+    app.config['SEND_FILE_MAX_AGE_DEFAULT'] = max(static_cache_timeout, 0)
+
     # Initialize configuration validation
     config_class.init_app(app)
+
+    if app.config.get('ENABLE_COMPRESSION', True):
+        compress.init_app(app)
     
     # Initialize Sentry monitoring (optional)
     init_sentry(app)
