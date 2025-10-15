@@ -22,7 +22,18 @@ try:
     RESAMPLING_FILTER = Image.Resampling.LANCZOS  # Pillow >= 9.1
 except AttributeError:  # pragma: no cover
     RESAMPLING_FILTER = Image.LANCZOS            # Backwards compatibility
-from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+
+# Playwright import is now optional (only for local dev with fallback)
+# In production, we use Browserless.io exclusively
+try:
+    from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    # Define dummy types for type hints
+    Browser = None
+    BrowserContext = None
+    Page = None
 
 
 class PDFService:
@@ -119,25 +130,26 @@ class PDFService:
         # This ensures inline-styled HTML gets proper base styles
         prepared_html = self._inject_single_page_css(html_content)
 
-        # Prefer Browserless HTTP screenshot when a token is available.
-        # VERCEL DEPLOYMENT: Browserless is REQUIRED on Vercel (Playwright won't work in serverless).
+        # Use Browserless if token is available (required for Vercel, optional for local)
         screenshot: Optional[bytes] = None
+        
         if self.browserless_token:
             screenshot = await self._screenshot_via_browserless(prepared_html)
+            if screenshot is None:
+                logging.warning("Browserless screenshot failed, but will not fallback")
         
-        # Check if we're running on Vercel (serverless environment)
-        is_vercel = os.environ.get('VERCEL') == '1' or os.environ.get('VERCEL_ENV') is not None
-        
-        if screenshot is None and is_vercel:
-            # On Vercel, we MUST use Browserless - local Playwright won't work
+        if screenshot is None:
+            # Browserless is REQUIRED - no Playwright fallback
+            # This simplifies deployment and ensures consistent rendering
             raise RuntimeError(
-                "BROWSERLESS_TOKEN is required for Vercel deployment. "
-                "Playwright cannot run in Vercel's serverless environment. "
-                "Please set BROWSERLESS_TOKEN in your Vercel environment variables. "
-                "Get a token at: https://www.browserless.io/"
+                "BROWSERLESS_TOKEN is required for PDF generation. "
+                "Please set BROWSERLESS_TOKEN in your environment variables. "
+                "Get a free token at: https://www.browserless.io/ (6000 units/month free). "
+                f"Current token status: {'Not set' if not self.browserless_token else 'Set but request failed'}"
             )
 
-        if screenshot is None:
+        # Remove Playwright fallback code entirely
+        if False:  # Disabled - we use Browserless exclusively now
             async with async_playwright() as playwright:
                 browser: Optional[Browser] = None
                 context: Optional[BrowserContext] = None
