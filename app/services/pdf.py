@@ -223,7 +223,7 @@ class PDFService:
                 "height": self.DEFAULT_VIEWPORT_HEIGHT,
                 "deviceScaleFactor": 1,
             },
-            "waitFor": 2000,  # Extra delay after page load for rendering
+            "waitForTimeout": 2000,  # Extra render delay; supported top-level per Browserless v2 API
         }
 
         def _post_request() -> Optional[bytes]:
