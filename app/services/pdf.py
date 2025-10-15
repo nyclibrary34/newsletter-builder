@@ -136,7 +136,7 @@ class PDFService:
         if self.browserless_token:
             screenshot = await self._screenshot_via_browserless(prepared_html)
             if screenshot is None:
-                logging.warning("Browserless screenshot failed, but will not fallback")
+                logging.error("Browserless screenshot request failed - check token validity and API status")
         
         if screenshot is None:
             # Browserless is REQUIRED - no Playwright fallback
@@ -229,19 +229,22 @@ class PDFService:
         def _post_request() -> Optional[bytes]:
             try:
                 response = requests.post(url, json=payload, timeout=45)
-            except Exception:
-                logging.warning("Browserless screenshot request failed", exc_info=True)
+                
+                if response.ok:
+                    content_length = len(response.content)
+                    logging.info(f"Browserless screenshot successful: {content_length} bytes")
+                    return response.content
+                
+                # Log the error with status code and response
+                error_text = response.text[:200] if response.text else "No response body"
+                logging.error(
+                    f"Browserless screenshot request returned {response.status_code}: {error_text}"
+                )
                 return None
-
-            if response.ok:
-                return response.content
-
-            logging.warning(
-                "Browserless screenshot request returned %s: %s",
-                response.status_code,
-                response.text[:200],
-            )
-            return None
+                
+            except Exception as e:
+                logging.error(f"Browserless screenshot request failed: {e}", exc_info=True)
+                return None
 
         return await asyncio.to_thread(_post_request)
 
