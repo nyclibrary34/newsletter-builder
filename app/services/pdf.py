@@ -37,26 +37,27 @@ class PDFService:
     MIN_VIEWPORT_WIDTH = 960
     MAX_VIEWPORT_WIDTH = 2400
     DEFAULT_VIEWPORT_HEIGHT = 1200
-    RENDER_DELAY_MS = 500
+    RENDER_DELAY_MS = 2000  # Increased for complex inline-styled HTML
 
     SINGLE_PAGE_CSS = """
+        * {
+            box-sizing: border-box;
+        }
+
         :root,
-        body {
-            background: #ffffff !important;
-        }
-
-        @page {
-            size: auto;
-            margin: 0;
-        }
-
         html,
         body {
+            background: #ffffff !important;
             margin: 0 !important;
             padding: 0 !important;
             width: auto !important;
             min-width: 100% !important;
             overflow: visible !important;
+        }
+
+        @page {
+            size: auto;
+            margin: 0;
         }
 
         body,
@@ -67,6 +68,25 @@ class PDFService:
             page-break-before: avoid !important;
             page-break-after: avoid !important;
             page-break-inside: avoid !important;
+        }
+
+        /* Ensure images and media render properly */
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        /* Ensure tables render properly */
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        /* Force visibility of all content */
+        * {
+            visibility: visible !important;
+            opacity: 1 !important;
         }
     """
 
@@ -95,12 +115,27 @@ class PDFService:
         margin_in = self._parse_margin(options)
         background_color = self._parse_color(options.get("background") or options.get("background_color"))
 
+        # CRITICAL: Inject CSS BEFORE sending to any rendering engine
+        # This ensures inline-styled HTML gets proper base styles
         prepared_html = self._inject_single_page_css(html_content)
 
-        # Prefer Browserless HTTP screenshot when a token is available (more reliable on Vercel).
+        # Prefer Browserless HTTP screenshot when a token is available.
+        # VERCEL DEPLOYMENT: Browserless is REQUIRED on Vercel (Playwright won't work in serverless).
         screenshot: Optional[bytes] = None
         if self.browserless_token:
             screenshot = await self._screenshot_via_browserless(prepared_html)
+        
+        # Check if we're running on Vercel (serverless environment)
+        is_vercel = os.environ.get('VERCEL') == '1' or os.environ.get('VERCEL_ENV') is not None
+        
+        if screenshot is None and is_vercel:
+            # On Vercel, we MUST use Browserless - local Playwright won't work
+            raise RuntimeError(
+                "BROWSERLESS_TOKEN is required for Vercel deployment. "
+                "Playwright cannot run in Vercel's serverless environment. "
+                "Please set BROWSERLESS_TOKEN in your Vercel environment variables. "
+                "Get a token at: https://www.browserless.io/"
+            )
 
         if screenshot is None:
             async with async_playwright() as playwright:
@@ -114,14 +149,15 @@ class PDFService:
                     await page.emulate_media(media="screen")
                     await page.set_viewport_size({"width": self.MIN_VIEWPORT_WIDTH, "height": self.DEFAULT_VIEWPORT_HEIGHT})
 
-                    await page.set_content(prepared_html, wait_until="networkidle")
+                    await page.set_content(prepared_html, wait_until="domcontentloaded")
+                    await page.wait_for_load_state("networkidle", timeout=10000)
                     await page.wait_for_timeout(self.RENDER_DELAY_MS)
 
                     dimensions = await self._measure_page_dimensions(page)
                     viewport_width = max(self.MIN_VIEWPORT_WIDTH, min(int(dimensions["width"]), self.MAX_VIEWPORT_WIDTH))
 
                     await page.set_viewport_size({"width": viewport_width, "height": self.DEFAULT_VIEWPORT_HEIGHT})
-                    await page.wait_for_timeout(100)
+                    await page.wait_for_timeout(500)  # Wait after viewport resize
 
                     screenshot = await page.screenshot(type="png", full_page=True)
                 finally:
@@ -166,12 +202,16 @@ class PDFService:
                 "fullPage": True,
                 "omitBackground": False,
             },
-            "gotoOptions": {"waitUntil": "networkidle2"},
+            "gotoOptions": {
+                "waitUntil": "networkidle2",
+                "timeout": 15000,  # Allow more time for complex HTML
+            },
             "viewport": {
                 "width": self.MAX_VIEWPORT_WIDTH,
                 "height": self.DEFAULT_VIEWPORT_HEIGHT,
                 "deviceScaleFactor": 1,
             },
+            "waitFor": 2000,  # Extra delay after page load for rendering
         }
 
         def _post_request() -> Optional[bytes]:
@@ -215,26 +255,52 @@ class PDFService:
         return browser, context, False
 
     async def _measure_page_dimensions(self, page: Page) -> Dict[str, float]:
-        """Measure rendered content dimensions."""
+        """Measure rendered content dimensions, handling complex nested structures."""
         return await page.evaluate(
             """
             () => {
+                // Force layout recalculation
+                document.body.offsetHeight;
+                
                 const body = document.body;
                 const html = document.documentElement;
-                const width = Math.max(
-                    body.scrollWidth,
-                    body.offsetWidth,
-                    html.clientWidth,
-                    html.scrollWidth,
-                    html.offsetWidth
+                
+                // Check all elements to find true content bounds
+                let maxWidth = 0;
+                let maxHeight = 0;
+                
+                // Get dimensions from standard properties
+                const standardWidth = Math.max(
+                    body.scrollWidth || 0,
+                    body.offsetWidth || 0,
+                    html.clientWidth || 0,
+                    html.scrollWidth || 0,
+                    html.offsetWidth || 0,
+                    window.innerWidth || 0
                 );
-                const height = Math.max(
-                    body.scrollHeight,
-                    body.offsetHeight,
-                    html.clientHeight,
-                    html.scrollHeight,
-                    html.offsetHeight
+                
+                const standardHeight = Math.max(
+                    body.scrollHeight || 0,
+                    body.offsetHeight || 0,
+                    html.clientHeight || 0,
+                    html.scrollHeight || 0,
+                    html.offsetHeight || 0,
+                    window.innerHeight || 0
                 );
+                
+                // Check all child elements for actual content bounds
+                const allElements = document.querySelectorAll('*');
+                allElements.forEach(el => {
+                    if (el.offsetWidth > 0 || el.offsetHeight > 0) {
+                        const rect = el.getBoundingClientRect();
+                        maxWidth = Math.max(maxWidth, rect.right);
+                        maxHeight = Math.max(maxHeight, rect.bottom);
+                    }
+                });
+                
+                const width = Math.max(standardWidth, maxWidth, 800);
+                const height = Math.max(standardHeight, maxHeight, 600);
+                
                 return { width, height };
             }
             """

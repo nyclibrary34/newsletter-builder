@@ -5,9 +5,11 @@ import os
 import json
 import asyncio
 import tempfile
-from playwright.async_api import async_playwright
+
+from app.services.pdf import PDFService
 
 tools_bp = Blueprint('tools', __name__, template_folder='templates')
+pdf_service = PDFService()
 
 # === IMAGE PROCESSING ===
 
@@ -182,7 +184,12 @@ def convert_html_to_pdf():
         options = json.loads(options_str) if options_str else {}
         html_content = html_file.read().decode('utf-8')
 
-        pdf_bytes = asyncio.run(create_single_page_pdf(html_content, options))
+        pdf_bytes = asyncio.run(
+            pdf_service.generate_single_page_pdf(
+                html_content,
+                options=options
+            )
+        )
 
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_pdf:
             temp_pdf.write(pdf_bytes)
@@ -206,106 +213,3 @@ def convert_html_to_pdf():
         return jsonify({'error': f'PDF conversion failed: {str(e)}'}), 500
 
 
-async def create_single_page_pdf(html_content, options):
-    """Create single-page PDF using Browserless or local browser"""
-    BROWSERLESS_WS = f"wss://production-sfo.browserless.io?token={os.environ.get('BROWSERLESS_TOKEN')}"
-
-    async with async_playwright() as p:
-        # Try Browserless first, fallback to local browser
-        try:
-            browser = await p.chromium.connect_over_cdp(BROWSERLESS_WS)
-            context = browser.contexts[0] if browser.contexts else await browser.new_context()
-            page = await context.new_page()
-        except Exception as e:
-            print(f"Browserless failed: {e}. Using local browser.")
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-
-        # CSS to force single-page layout
-        single_page_css = """<style>
-        @page { size: auto; margin: 0mm; }
-        * {
-            page-break-after: avoid !important;
-            page-break-before: avoid !important;
-            page-break-inside: avoid !important;
-            break-after: avoid !important;
-            break-before: avoid !important;
-            break-inside: avoid !important;
-        }
-        html, body {
-            height: auto !important;
-            max-height: none !important;
-            overflow: visible !important;
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-        body {
-            width: max-content !important;
-            min-height: 100vh !important;
-        }
-        body * {
-            orphans: 9999 !important;
-            widows: 9999 !important;
-        }
-        </style>"""
-
-        # Inject CSS into HTML
-        if '<head>' in html_content:
-            html_content = html_content.replace(
-                '<head>', f'<head>{single_page_css}')
-        elif '<html>' in html_content:
-            html_content = html_content.replace(
-                '<html>', f'<html><head>{single_page_css}</head>')
-        else:
-            html_content = f'<html><head>{single_page_css}</head><body>{html_content}</body></html>'
-
-        await page.set_viewport_size({"width": 2000, "height": 2000})
-        await page.set_content(html_content, wait_until='networkidle')
-        await page.wait_for_timeout(3000)
-
-        # Calculate content dimensions
-        dimensions = await page.evaluate("""
-            () => {
-                document.body.offsetHeight;  // Force layout
-                const body = document.body;
-                const html = document.documentElement;
-                
-                const width = Math.max(
-                    body.scrollWidth, body.offsetWidth,
-                    html.clientWidth, html.scrollWidth, html.offsetWidth,
-                    window.innerWidth
-                );
-                
-                const height = Math.max(
-                    body.scrollHeight, body.offsetHeight,
-                    html.clientHeight, html.scrollHeight, html.offsetHeight,
-                    window.innerHeight
-                );
-                
-                return { width, height };
-            }
-        """)
-
-        # Calculate PDF dimensions and generate
-        scale = float(options.get('scale', 100)) / 100.0
-        margin = options.get('margin', 5)
-        margin_str = f"{margin}mm"
-
-        content_width = max(dimensions['width'], 800)
-        content_height = max(dimensions['height'], 600)
-        pdf_width = content_width + 20
-        pdf_height = content_height + 20
-
-        pdf_bytes = await page.pdf(
-            width=f"{pdf_width}px",
-            height=f"{pdf_height}px",
-            margin={'top': margin_str, 'bottom': margin_str,
-                    'left': margin_str, 'right': margin_str},
-            print_background=True,
-            prefer_css_page_size=False,
-            scale=scale,
-            page_ranges='1'
-        )
-
-        await browser.close()
-        return pdf_bytes
