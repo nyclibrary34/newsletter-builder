@@ -157,9 +157,10 @@ class PDFService:
         if not self.browserless_token:
             return None
 
-        url = f"https://chrome.browserless.io/screenshot?token={self.browserless_token}"
+        # Browserless migrated the REST API away from chrome.browserless.io — use the new production endpoint.
+        url = f"https://production-sfo.browserless.io/screenshot?token={self.browserless_token}"
         payload: Dict[str, Any] = {
-            "content": html,
+            "html": html,
             "options": {
                 "type": "png",
                 "fullPage": True,
