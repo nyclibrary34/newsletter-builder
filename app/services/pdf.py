@@ -45,10 +45,12 @@ class PDFService:
     DEFAULT_DPI = 150
     DEFAULT_MAX_SCALE = 2.0
 
-    MIN_VIEWPORT_WIDTH = 960
-    MAX_VIEWPORT_WIDTH = 2400
+    MIN_VIEWPORT_WIDTH = 768
+    MAX_VIEWPORT_WIDTH = 1600
     DEFAULT_VIEWPORT_HEIGHT = 1200
     RENDER_DELAY_MS = 2000  # Increased for complex inline-styled HTML
+    BROWSERLESS_VIEWPORT_WIDTH = 880
+    BROWSERLESS_DEVICE_SCALE_FACTOR = 2
 
     SINGLE_PAGE_CSS = """
         * {
@@ -122,6 +124,7 @@ class PDFService:
         manual_scale = self._get_float(options, ["scale"], 100.0) / 100.0
         if manual_scale <= 0:
             manual_scale = 1.0
+        scale_supplied = "scale" in options
 
         margin_in = self._parse_margin(options)
         background_color = self._parse_color(options.get("background") or options.get("background_color"))
@@ -195,6 +198,7 @@ class PDFService:
             margin_in=margin_in,
             dpi=dpi,
             manual_scale=manual_scale,
+            manual_scale_supplied=scale_supplied,
             allow_scale_up=allow_scale_up,
             max_scale=max_scale,
             background_color=background_color,
@@ -219,9 +223,9 @@ class PDFService:
                 "timeout": 15000,  # Allow more time for complex HTML
             },
             "viewport": {
-                "width": self.MAX_VIEWPORT_WIDTH,
+                "width": self.BROWSERLESS_VIEWPORT_WIDTH,
                 "height": self.DEFAULT_VIEWPORT_HEIGHT,
-                "deviceScaleFactor": 1,
+                "deviceScaleFactor": self.BROWSERLESS_DEVICE_SCALE_FACTOR,
             },
             "waitForTimeout": 2000,  # Extra render delay; supported top-level per Browserless v2 API
         }
@@ -330,6 +334,7 @@ class PDFService:
         margin_in: float,
         dpi: int,
         manual_scale: float,
+        manual_scale_supplied: bool,
         allow_scale_up: bool,
         max_scale: float,
         background_color: Tuple[int, int, int],
@@ -349,7 +354,14 @@ class PDFService:
         else:
             max_allowed = min(width_ratio, 1.0)
 
-        desired_ratio = max(0.01, manual_scale)
+        if manual_scale_supplied:
+            desired_ratio = manual_scale
+        elif width_ratio >= 1.0 and allow_scale_up:
+            desired_ratio = min(width_ratio, max_scale)
+        else:
+            desired_ratio = width_ratio
+
+        desired_ratio = max(0.01, desired_ratio)
         if not allow_scale_up:
             desired_ratio = min(desired_ratio, 1.0)
         else:
@@ -383,7 +395,43 @@ class PDFService:
         output = BytesIO()
         canvas.save(output, format="PDF", resolution=dpi)
         output.seek(0)
-        return output.read()
+        pdf_bytes = output.read()
+        return self._apply_pdf_view_preferences(pdf_bytes)
+
+    def _apply_pdf_view_preferences(self, pdf_bytes: bytes) -> bytes:
+        """
+        Ensure generated PDFs open using a width-based zoom for readability.
+
+        Some PDF viewers default to "Fit Page", which renders tall single-page PDFs
+        at unreadably small scales. By setting the open action to FitH we hint that
+        viewers should fit the width instead, so the newsletter remains legible.
+        """
+        try:
+            from pypdf import PdfReader, PdfWriter
+            from pypdf.generic import Destination, Fit
+        except ImportError:
+            return pdf_bytes
+
+        try:
+            reader = PdfReader(BytesIO(pdf_bytes))
+            writer = PdfWriter()
+            writer.clone_document_from_reader(reader)
+
+            page = writer.pages[0]
+            fit_destination = Destination(
+                "OpenAction",
+                page,
+                Fit.fit_horizontally(top=page.mediabox.top),
+            )
+            writer.open_destination = fit_destination
+
+            buffer = BytesIO()
+            writer.write(buffer)
+            buffer.seek(0)
+            return buffer.read()
+        except Exception:
+            logging.debug("Unable to apply PDF view preferences", exc_info=True)
+            return pdf_bytes
 
     def _inject_single_page_css(self, html_content: str) -> str:
         """Ensure single-page control CSS is embedded in the HTML document."""
