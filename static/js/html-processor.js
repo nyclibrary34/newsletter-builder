@@ -593,21 +593,82 @@ function parseDeclarations(declarationText) {
  * @returns {string} Formatted HTML
  */
 function formatHTMLContent(html) {
-  // Parse the HTML for proper formatting
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
+  const voidElements = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'];
+  const inlineElements = new Set([
+    'a',
+    'abbr',
+    'b',
+    'cite',
+    'code',
+    'em',
+    'i',
+    'img',
+    'label',
+    'mark',
+    'q',
+    'small',
+    'span',
+    'strong',
+    'sub',
+    'sup',
+    'time',
+    'u',
+    'br'
+  ]);
   
-  // Format function with proper indentation
-  function formatNode(node, level = 0) {
-    const indent = '  '.repeat(level);
-    let result = '';
+  function isInlineElement(tagName) {
+    return inlineElements.has(tagName);
+  }
+  
+  function formatNode(node, level = 0, inlineParent = false) {
+    const indent = inlineParent ? '' : '  '.repeat(level);
+    const asciiWhitespace = /[ \t\r\n\f\v]+/g;
     
     if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent.trim();
-      if (text) {
-        return indent + text;
+      const rawText = node.textContent || '';
+      if (!rawText) {
+        return '';
       }
-      return '';
+      
+      const hasVisibleChars = /[^\s\u00a0]/.test(rawText);
+      if (!hasVisibleChars) {
+        if (rawText.includes('\u00a0')) {
+          const nbspOnly = rawText.replace(asciiWhitespace, '');
+          if (!nbspOnly) {
+            return '';
+          }
+          return inlineParent ? nbspOnly : indent + nbspOnly;
+        }
+        return '';
+      }
+      
+      const leadingSpace = /^[ \t\r\n\f\v]/.test(rawText);
+      const trailingSpace = /[ \t\r\n\f\v]$/.test(rawText);
+      let normalized = rawText.replace(asciiWhitespace, ' ');
+      normalized = normalized.replace(/^[ \t\r\n\f\v]+/, '').replace(/[ \t\r\n\f\v]+$/, '');
+      
+      if (!normalized) {
+        return '';
+      }
+      
+      if (inlineParent) {
+        // Check if the text starts with punctuation
+        const startsWithPunctuation = /^[\.,;:!?]/.test(normalized);
+        
+        if (leadingSpace && !startsWithPunctuation) {
+          normalized = ' ' + normalized;
+        }
+        if (trailingSpace) {
+          normalized = normalized + ' ';
+        }
+      }
+      
+      // Remove spaces before punctuation
+      normalized = normalized.replace(/ ([\.,;:!?])/g, '$1');
+      
+      return inlineParent ? normalized : indent + normalized;
     }
     
     if (node.nodeType === Node.COMMENT_NODE) {
@@ -616,15 +677,11 @@ function formatHTMLContent(html) {
     
     if (node.nodeType === Node.ELEMENT_NODE) {
       const tagName = node.tagName.toLowerCase();
-      const voidElements = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'];
       const isVoid = voidElements.includes(tagName);
-      const inlineElements = ['a', 'span', 'strong', 'em', 'b', 'i', 'u', 'code', 'small', 'sub', 'sup'];
-      const isInline = inlineElements.includes(tagName);
+      const isInline = isInlineElement(tagName) || inlineParent;
       
-      // Start tag
-      result = indent + '<' + tagName;
+      let result = indent + '<' + tagName;
       
-      // Add attributes
       for (let attr of node.attributes) {
         result += ' ' + attr.name;
         if (attr.value) {
@@ -639,44 +696,63 @@ function formatHTMLContent(html) {
       
       result += '>';
       
-      // Process children
       const children = Array.from(node.childNodes);
-      const hasOnlyText = children.every(child => child.nodeType === Node.TEXT_NODE);
+      const inlineChildrenOnly = children.every(child => {
+        if (child.nodeType === Node.TEXT_NODE) {
+          return true;
+        }
+        if (child.nodeType === Node.COMMENT_NODE) {
+          return true;
+        }
+        if (child.nodeType === Node.ELEMENT_NODE) {
+          return isInlineElement(child.tagName.toLowerCase());
+        }
+        return false;
+      });
       
-      if (hasOnlyText && node.textContent.trim()) {
-        // Inline text content
-        result += node.textContent.trim();
-        result += '</' + tagName + '>';
-      } else if (children.length > 0) {
-        // Format children
+      if (children.length > 0) {
+        const childInlineContext = isInline || inlineChildrenOnly || inlineParent;
         const childrenFormatted = [];
+        
         for (let child of children) {
-          const formatted = formatNode(child, level + 1);
+          const formatted = formatNode(child, level + 1, childInlineContext);
           if (formatted) {
             childrenFormatted.push(formatted);
           }
         }
         
         if (childrenFormatted.length > 0) {
-          if (!isInline && tagName !== 'title') {
+          const shouldAddNewlines = !isInline && !inlineParent && !inlineChildrenOnly && tagName !== 'title';
+          if (shouldAddNewlines) {
             result += '\n' + childrenFormatted.join('\n') + '\n' + indent;
           } else {
-            result += childrenFormatted.join('');
+            // For inline content, merge text starting with punctuation with previous element
+            const merged = [];
+            for (let i = 0; i < childrenFormatted.length; i++) {
+              const current = childrenFormatted[i];
+              // Check if current text starts with punctuation (after trimming leading whitespace)
+              const trimmed = current.trimStart();
+              if (trimmed && /^[\.,;:!?]/.test(trimmed) && merged.length > 0) {
+                // Merge with previous element, removing any whitespace between them
+                merged[merged.length - 1] += trimmed;
+              } else {
+                merged.push(current);
+              }
+            }
+            result += merged.join('');
           }
         }
-        result += '</' + tagName + '>';
-      } else {
-        result += '</' + tagName + '>';
       }
+      
+      result += '</' + tagName + '>';
+      return result;
     }
     
-    return result;
+    return '';
   }
   
-  // Format the document
   let formatted = '<!DOCTYPE html>\n';
-  formatted += formatNode(doc.documentElement, 0);
-  
+  formatted += formatNode(doc.documentElement, 0, false);
   return formatted;
 }
 
