@@ -17,6 +17,207 @@ function generateUUID() {
 }
 
 
+const PREVIEW_TEXT = 'Municipal Library Notes (Optional)';
+
+const SMART_CHAR_MAP = new Map([
+  ['\u2018', "'"],
+  ['\u2019', "'"],
+  ['\u201a', ','],
+  ['\u201c', '"'],
+  ['\u201d', '"'],
+  ['\u201e', '"'],
+  ['\u2010', '-'],
+  ['\u2011', '-'],
+  ['\u2012', '-'],
+  ['\u2013', '-'],
+  ['\u2014', '--'],
+  ['\u2015', '--'],
+  ['\u2026', '...'],
+  ['\u00a0', ' '],
+  ['\u2007', ' '],
+  ['\u2009', ' '],
+  ['\u200a', ' '],
+  ['\u200b', '']
+]);
+
+let textDecoderInstance = null;
+
+const CP1252_REVERSE_MAP = {
+  0x20ac: 0x80,
+  0x201a: 0x82,
+  0x0192: 0x83,
+  0x201e: 0x84,
+  0x2026: 0x85,
+  0x2020: 0x86,
+  0x2021: 0x87,
+  0x02c6: 0x88,
+  0x2030: 0x89,
+  0x0160: 0x8a,
+  0x2039: 0x8b,
+  0x0152: 0x8c,
+  0x017d: 0x8e,
+  0x2018: 0x91,
+  0x2019: 0x92,
+  0x201c: 0x93,
+  0x201d: 0x94,
+  0x2022: 0x95,
+  0x2013: 0x96,
+  0x2014: 0x97,
+  0x02dc: 0x98,
+  0x2122: 0x99,
+  0x0161: 0x9a,
+  0x203a: 0x9b,
+  0x0153: 0x9c,
+  0x017e: 0x9e,
+  0x0178: 0x9f
+};
+
+function getTextDecoder() {
+  if (!textDecoderInstance && typeof TextDecoder !== 'undefined') {
+    textDecoderInstance = new TextDecoder('utf-8', { fatal: false });
+  }
+  return textDecoderInstance;
+}
+
+function decodeMojibake(value) {
+  if (!value) return value;
+  const decoder = getTextDecoder();
+  if (!decoder) return value;
+
+  let requiresDecode = false;
+  const bytes = new Uint8Array(value.length);
+
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code <= 0xff) {
+      bytes[i] = code;
+      if (code >= 0x80) {
+        requiresDecode = true;
+      }
+    } else if (CP1252_REVERSE_MAP[code] !== undefined) {
+      bytes[i] = CP1252_REVERSE_MAP[code];
+      requiresDecode = true;
+    } else {
+      return value;
+    }
+  }
+
+  if (!requiresDecode) {
+    return value;
+  }
+
+  try {
+    const decoded = decoder.decode(bytes);
+    return decoded.includes('\ufffd') ? value : decoded;
+  } catch (error) {
+    console.warn('Mojibake decode failed, keeping original text', error);
+    return value;
+  }
+}
+
+function replaceSmartCharacters(value) {
+  if (!value) return value;
+  let result = value;
+  SMART_CHAR_MAP.forEach((replacement, character) => {
+    if (result.includes(character)) {
+      result = result.split(character).join(replacement);
+    }
+  });
+  return result;
+}
+
+function normalizeTextContent(doc) {
+  if (!doc || !doc.body) return;
+
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (!node || !node.nodeValue) continue;
+    const parentTag = node.parentNode ? node.parentNode.nodeName : '';
+    if (parentTag === 'SCRIPT' || parentTag === 'STYLE') {
+      continue;
+    }
+    const original = node.nodeValue;
+    let normalized = decodeMojibake(original);
+    normalized = replaceSmartCharacters(normalized);
+    if (normalized !== original) {
+      node.nodeValue = normalized;
+    }
+  }
+
+  const attributeTargets = new Set([
+    'title',
+    'alt',
+    'aria-label',
+    'aria-labelledby',
+    'aria-describedby',
+    'data-tooltip',
+    'data-tooltip-title',
+    'data-tooltip-content'
+  ]);
+
+  doc.querySelectorAll('*').forEach((element) => {
+    Array.from(element.attributes || []).forEach((attr) => {
+      if (!attributeTargets.has(attr.name)) {
+        return;
+      }
+      const original = attr.value;
+      let normalized = decodeMojibake(original);
+      normalized = replaceSmartCharacters(normalized);
+      if (normalized !== original) {
+        element.setAttribute(attr.name, normalized);
+      }
+    });
+  });
+}
+
+function ensurePreviewText(doc) {
+  // Find the center element (main email container)
+  const center = doc.querySelector('center[role="article"]');
+  if (!center) return;
+  
+  // Check if preview text div already exists
+  const existingPreview = center.querySelector('div[aria-hidden="true"]');
+  if (existingPreview) {
+    // Normalize preview text content and attributes
+    existingPreview.textContent = PREVIEW_TEXT;
+    const existingStyle = existingPreview.getAttribute('style') || '';
+    if (!existingStyle.includes('max-height')) {
+      existingPreview.setAttribute(
+        'style',
+        'max-height: 0px; overflow-x: hidden; overflow-y: hidden'
+      );
+    }
+    return;
+  }
+  
+  // Find the "Visually Hidden Preheader Text: BEGIN" comment
+  let previewComment = null;
+  const walker = doc.createTreeWalker(center, NodeFilter.SHOW_COMMENT);
+  while (walker.nextNode()) {
+    if (walker.currentNode.textContent.includes('Visually Hidden Preheader Text: BEGIN')) {
+      previewComment = walker.currentNode;
+      break;
+    }
+  }
+  
+  if (!previewComment) return;
+  
+  // Create the preview text div
+  const previewDiv = doc.createElement('div');
+  previewDiv.setAttribute('aria-hidden', 'true');
+  previewDiv.setAttribute('id', 'id-e784080a-da99-4659-8d9c-960b25096c4c');
+  previewDiv.setAttribute('style', 'max-height: 0px; overflow-x: hidden; overflow-y: hidden');
+  previewDiv.textContent = PREVIEW_TEXT;
+  
+  // Insert after the BEGIN comment
+  if (previewComment.nextSibling) {
+    previewComment.parentNode.insertBefore(previewDiv, previewComment.nextSibling);
+  } else {
+    previewComment.parentNode.appendChild(previewDiv);
+  }
+}
+
 /**
  * Fix document structure issues common with GrapesJS export
  * @param {Document} doc - Document object
@@ -116,6 +317,66 @@ function preserveLayoutPatterns(doc) {
 }
 
 /**
+ * Fix footer link colors for better contrast on dark backgrounds
+ * @param {Document} doc - Document object
+ */
+function fixFooterLinkColors(doc) {
+  // Find the footer table (identified by black background)
+  const footerTables = doc.querySelectorAll('table[style*="background-color: rgb(0, 0, 0)"], table[style*="background-color:rgb(0,0,0)"], table[style*="background-color:#000"]');
+  
+  footerTables.forEach(footerTable => {
+    // Find all links within the footer
+    const footerLinks = footerTable.querySelectorAll('a');
+    
+    footerLinks.forEach(link => {
+      // Skip social media icon links (they are images)
+      const hasImage = link.querySelector('img');
+      if (hasImage) {
+        return; // Skip this link, it's an image link
+      }
+      
+      // Change text link color to white for contrast
+      const style = link.getAttribute('style') || '';
+      
+      // Parse the style attribute properly to avoid malformed CSS
+      const styleProps = new Map();
+      
+      // Split by semicolon and parse each property
+      style.split(';').forEach(prop => {
+        const colonIndex = prop.indexOf(':');
+        if (colonIndex > 0) {
+          const propName = prop.substring(0, colonIndex).trim();
+          const propValue = prop.substring(colonIndex + 1).trim();
+          if (propName && propValue) {
+            styleProps.set(propName, propValue);
+          }
+        }
+      });
+      
+      // Remove color and text-decoration related properties
+      styleProps.delete('color');
+      styleProps.delete('text-decoration');
+      styleProps.delete('text-decoration-line');
+      styleProps.delete('text-decoration-thickness');
+      styleProps.delete('text-decoration-style');
+      styleProps.delete('text-decoration-color');
+      
+      // Add white color and underline
+      styleProps.set('color', 'rgb(255, 255, 255)');
+      styleProps.set('text-decoration', 'underline');
+      
+      // Rebuild the style string
+      const newStyleArray = [];
+      styleProps.forEach((value, name) => {
+        newStyleArray.push(`${name}: ${value}`);
+      });
+      
+      link.setAttribute('style', newStyleArray.join('; '));
+    });
+  });
+}
+
+/**
  * Fix email compatibility issues for better client support
  * @param {Document} doc - Document object
  */
@@ -137,6 +398,9 @@ function fixEmailCompatibility(doc) {
   
   // Ensure alignment styles are preserved
   ensureAlignmentStyles(doc);
+  
+  // Fix footer link colors for contrast
+  fixFooterLinkColors(doc);
   
   // Clean up temporary preservation attributes
   doc.querySelectorAll('[data-preserve-layout], [data-preserve-center]').forEach(element => {
@@ -203,8 +467,10 @@ function ensureAlignmentStyles(doc) {
     const img = link.querySelector('img');
     if (img) {
       const imgStyle = img.getAttribute('style') || '';
-      const updatedImgStyle = imgStyle.replace(/display\s*:\s*[^;]+;?/gi, ''); // Remove existing display
-      img.setAttribute('style', updatedImgStyle + (updatedImgStyle ? '; ' : '') + 'display: inline-block !important; vertical-align: middle !important');
+      // Remove existing display and vertical-align to avoid conflicts
+      let updatedImgStyle = imgStyle.replace(/display\s*:\s*[^;]+;?/gi, '');
+      updatedImgStyle = updatedImgStyle.replace(/vertical-align\s*:\s*[^;]+;?/gi, '');
+      img.setAttribute('style', updatedImgStyle + (updatedImgStyle ? '; ' : '') + 'display: inline-block !important');
     }
   });
   
@@ -303,6 +569,48 @@ function optimizeImages(doc) {
       img.setAttribute('border', '0');
     }
     
+    // CRITICAL: Ensure all images have HTML width attribute for Outlook compatibility
+    // Outlook will scale images to original size without this attribute
+    const widthAttr = (img.getAttribute('width') || '').trim();
+    if (!widthAttr || !/^\d+$/.test(widthAttr)) {
+      const style = img.getAttribute('style') || '';
+
+      // Check if this is a social icon first
+      const parent = img.closest('a');
+      const isSocialIcon = parent && (
+        parent.href?.includes('facebook') ||
+        parent.href?.includes('twitter') ||
+        parent.href?.includes('instagram') ||
+        parent.href?.includes('youtube') ||
+        parent.href?.includes('tumblr') ||
+        parent.href?.includes('linkedin')
+      );
+
+      // Try to extract width from inline styles
+      // Match various width patterns: width: 100%, width: 573px, width:auto, etc.
+      const widthPxMatch = style.match(/width\s*:\s*(\d+)(?:px)?(?:\s|;|$)/i);
+      const maxWidthPxMatch = style.match(/max-width\s*:\s*(\d+)(?:px)?(?:\s|;|$)/i);
+      const widthPercentMatch = style.match(/width\s*:\s*(\d+)%/i);
+
+      if (widthPxMatch && parseInt(widthPxMatch[1]) > 0) {
+        // Use explicit pixel width from styles
+        img.setAttribute('width', widthPxMatch[1]);
+      } else if (maxWidthPxMatch && parseInt(maxWidthPxMatch[1]) > 0) {
+        // Use max-width as width
+        img.setAttribute('width', maxWidthPxMatch[1]);
+      } else if (widthPercentMatch && parseInt(widthPercentMatch[1]) === 100) {
+        // 100% width images should use 600 (standard email width)
+        img.setAttribute('width', '600');
+      } else if (isSocialIcon) {
+        // Social icons default to 42px
+        img.setAttribute('width', '42');
+      } else {
+        // For other images without explicit width, use 600 as safe default
+        // This prevents Outlook from using the image's original size
+        img.setAttribute('width', '600');
+      }
+    }
+    
     // Check if image is part of social media icons or logos
     const parent = img.closest('a');
     const isSocialIcon = parent && (
@@ -333,7 +641,14 @@ function optimizeImages(doc) {
           
           // Only add display: block for large content images, not logos or inline images
           if (!isInCenteredContainer && !isSmallImage) {
-            const newStyle = style + (style ? '; ' : '') + 'display: block';
+            // Parse existing styles and remove vertical-align (incompatible with display: block)
+            const styleProps = parseStyleAttribute(style);
+            styleProps.delete('vertical-align');
+            styleProps.set('display', 'block');
+            
+            const newStyle = Array.from(styleProps.entries())
+              .map(([prop, value]) => `${prop}: ${value}`)
+              .join('; ');
             img.setAttribute('style', newStyle);
           }
         }
@@ -343,35 +658,39 @@ function optimizeImages(doc) {
 }
 
 /**
- * Add MSO-specific properties for better Outlook compatibility
+ * Clean up MSO-specific properties that trigger CSS validation warnings.
+ * Historically we injected `mso-table-lspace/rspace` for Outlook, but they now
+ * live in exported HTML and surface lint errors. Since modern layouts rely on
+ * `border-collapse` and zero cell spacing instead, strip those MSO properties.
  * @param {Document} doc - Document object
  */
 function addMsoProperties(doc) {
   const tables = doc.querySelectorAll('table');
-  
+
   tables.forEach(table => {
-    const style = table.getAttribute('style') || '';
-    
-    // Only add MSO properties if not already present and if it won't break layout
-    if (!style.includes('mso-table-lspace') && !style.includes('mso-table-rspace')) {
-      // Check if this table is marked for layout preservation
-      const isPreserved = table.hasAttribute('data-preserve-layout');
-      
-      if (!isPreserved) {
-        // Check if this table is part of a full-width background structure
-        const width = table.getAttribute('width');
-        const isFullWidth = width === '100%' || style.includes('width: 100%');
-        const hasBackgroundColor = style.includes('background-color');
-        
-        // Don't add MSO spacing to full-width tables with backgrounds (they handle their own spacing)
-        const isStructuralTable = isFullWidth && hasBackgroundColor;
-        
-        if (!isStructuralTable) {
-          const msoProps = 'mso-table-lspace: 0pt !important; mso-table-rspace: 0pt !important';
-          const newStyle = style + (style ? '; ' : '') + msoProps;
-          table.setAttribute('style', newStyle);
-        }
+    const style = table.getAttribute('style');
+    if (!style) return;
+
+    let updatedStyle = style;
+
+    // Remove Outlook-specific spacing properties that trigger CSS validation warnings
+    updatedStyle = updatedStyle.replace(/mso-table-lspace\s*:\s*0pt\s*!important;?/gi, '');
+    updatedStyle = updatedStyle.replace(/mso-table-rspace\s*:\s*0pt\s*!important;?/gi, '');
+
+    if (updatedStyle !== style) {
+      // Collapse duplicate semicolons/whitespace created by the removals
+      updatedStyle = updatedStyle
+        .replace(/;;+/g, ';')
+        .replace(/;\s*;/g, ';')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+
+      // Ensure style ends with semicolon if there are multiple declarations
+      if (updatedStyle && !updatedStyle.trim().endsWith(';') && updatedStyle.includes(';')) {
+        updatedStyle = `${updatedStyle.trim()};`;
       }
+
+      table.setAttribute('style', updatedStyle);
     }
   });
 }
@@ -421,6 +740,12 @@ function processHTML(htmlContent) {
   
   // Fix common structural issues from GrapesJS export
   fixDocumentStructure(doc);
+  
+  // Ensure preview text is present
+  ensurePreviewText(doc);
+  
+  // Normalize text content to prevent encoding glitches
+  normalizeTextContent(doc);
   
   // Extract and process only specific CSS rules that juice would inline
   const styleTags = doc.querySelectorAll('style');
