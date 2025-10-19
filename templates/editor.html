@@ -368,8 +368,6 @@ JavaScript APIs Used:
       table { 
         border-collapse: collapse; 
         border-spacing: 0; 
-        mso-table-lspace: 0pt; 
-        mso-table-rspace: 0pt; 
       }
       
       /* Preserve original alignment for cells */
@@ -486,6 +484,27 @@ JavaScript APIs Used:
             { name: "colors", items: ["TextColor", "BGColor"] },               // Text and background colors
           ],
         },
+        // Filter out inline elements (span) that CKEditor doesn't support in inline mode
+        customRte: {
+          enable: function(el, rte) {
+            // CKEditor inline mode only supports block-level elements
+            // Skip span, a, strong, em, and other inline elements to prevent errors
+            const inlineElements = ['SPAN', 'A', 'STRONG', 'EM', 'B', 'I', 'U', 'STRIKE'];
+            if (inlineElements.includes(el.tagName)) {
+              // Make element editable without CKEditor for inline elements
+              el.contentEditable = true;
+              return null; // Don't activate CKEditor
+            }
+            // For block elements, let the plugin handle CKEditor initialization normally
+            return undefined;
+          },
+          disable: function(el, rte) {
+            el.contentEditable = false;
+            if (rte && rte.destroy) {
+              rte.destroy();
+            }
+          }
+        }
       },
     },
   });
@@ -1122,7 +1141,6 @@ JavaScript APIs Used:
           a[href*="tumblr"] img,
           a[href*="linkedin"] img {
             display: inline-block !important;
-            vertical-align: middle !important;
           }
           
           /* Preserve NYC logo centering */
