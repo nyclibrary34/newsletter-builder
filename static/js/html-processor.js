@@ -799,6 +799,11 @@ function processHTML(htmlContent) {
   
   // Fix email compatibility issues
   fixEmailCompatibility(doc);
+
+  // Apply baseline typography and inline normalization
+  ensureBodyTypography(doc);
+  applyDefaultCellStyles(doc);
+  normalizeInlineStyles(doc);
   
   // Return the processed HTML with proper DOCTYPE
   return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
@@ -877,7 +882,7 @@ function shouldInlineSelector(selector) {
 function parseStyleAttribute(styleText) {
   const props = new Map();
   if (!styleText) return props;
-  
+
   styleText.split(';').forEach(decl => {
     const colonIndex = decl.indexOf(':');
     if (colonIndex > 0) {
@@ -888,8 +893,22 @@ function parseStyleAttribute(styleText) {
       }
     }
   });
-  
+
   return props;
+}
+
+/**
+ * Convert a Map of style properties back to a style attribute string
+ * @param {Map<string, string>} props
+ * @returns {string}
+ */
+function styleMapToString(props) {
+  if (!props || props.size === 0) {
+    return '';
+  }
+  return Array.from(props.entries())
+    .map(([prop, value]) => `${prop}: ${value}`)
+    .join('; ');
 }
 
 /**
@@ -910,6 +929,203 @@ function parseDeclarations(declarationText) {
     }
   });
   return declarations;
+}
+
+/**
+ * Expand margin/padding shorthand declarations into per-side properties.
+ * Preserves existing side-specific values.
+ * @param {Map<string, string>} props - style property map
+ * @param {string} property - either "margin" or "padding"
+ */
+function expandSpacingShorthand(props, property) {
+  if (!props.has(property)) {
+    return;
+  }
+
+  const rawValue = props.get(property);
+  props.delete(property);
+
+  if (!rawValue) {
+    return;
+  }
+
+  const parts = rawValue.trim().split(/\s+/);
+  if (parts.length === 0) {
+    return;
+  }
+
+  let top;
+  let right;
+  let bottom;
+  let left;
+
+  if (parts.length === 1) {
+    [top] = parts;
+    right = bottom = left = top;
+  } else if (parts.length === 2) {
+    [top, right] = parts;
+    bottom = top;
+    left = right;
+  } else if (parts.length === 3) {
+    [top, right, bottom] = parts;
+    left = right;
+  } else {
+    [top, right, bottom, left] = parts;
+  }
+
+  const prefix = property === 'margin' ? 'margin' : 'padding';
+  const mapping = [
+    [`${prefix}-top`, top],
+    [`${prefix}-right`, right],
+    [`${prefix}-bottom`, bottom],
+    [`${prefix}-left`, left]
+  ];
+
+  mapping.forEach(([propName, value]) => {
+    if (value !== undefined && !props.has(propName)) {
+      props.set(propName, value);
+    }
+  });
+}
+
+function tdHasContent(td) {
+  if (!td) {
+    return false;
+  }
+  if (td.querySelector && td.querySelector('img, picture, svg')) {
+    return true;
+  }
+  const text = td.textContent || '';
+  return text.replace(/\u00a0/g, ' ').trim().length > 0;
+}
+
+/**
+ * Ensure the body element carries baseline typography defaults for email clients.
+ * @param {Document} doc
+ */
+function ensureBodyTypography(doc) {
+  if (!doc || !doc.body) {
+    return;
+  }
+  const body = doc.body;
+  const props = parseStyleAttribute(body.getAttribute('style'));
+  const defaults = {
+    'font-family': 'Arial, Helvetica, sans-serif',
+    'line-height': '1.5',
+    'color': '#111111',
+    '-webkit-text-size-adjust': '100%',
+    'text-size-adjust': '100%',
+    '-ms-text-size-adjust': '100%',
+    'margin-top': '0',
+    'margin-right': '0',
+    'margin-bottom': '0',
+    'margin-left': '0',
+    'padding-top': '0',
+    'padding-right': '0',
+    'padding-bottom': '0',
+    'padding-left': '0',
+    'width': '100% !important'
+  };
+
+  Object.entries(defaults).forEach(([prop, value]) => {
+    if (!props.has(prop)) {
+      props.set(prop, value);
+    }
+  });
+
+  if (!body.getAttribute('bgcolor')) {
+    body.setAttribute('bgcolor', '#ffffff');
+  }
+
+  const styleValue = styleMapToString(props);
+  if (styleValue) {
+    body.setAttribute('style', styleValue);
+  } else {
+    body.removeAttribute('style');
+  }
+}
+
+/**
+ * Apply default typography styles to table cells lacking inline declarations.
+ * @param {Document} doc
+ */
+function applyDefaultCellStyles(doc) {
+  if (!doc) {
+    return;
+  }
+  const cells = doc.querySelectorAll('td');
+  cells.forEach(td => {
+    if (!tdHasContent(td)) {
+      return;
+    }
+    const props = parseStyleAttribute(td.getAttribute('style'));
+
+    if (!props.has('font-family')) {
+      props.set('font-family', 'Arial, Helvetica, sans-serif');
+    }
+    if (!props.has('font-size')) {
+      props.set('font-size', '16px');
+    }
+    if (!props.has('line-height')) {
+      props.set('line-height', '1.5');
+    }
+    if (!props.has('mso-line-height-rule')) {
+      props.set('mso-line-height-rule', 'exactly');
+    }
+    if (!props.has('color')) {
+      props.set('color', '#111111');
+    }
+
+    const hasPadding = Array.from(props.keys()).some(key => key.startsWith('padding'));
+    if (!hasPadding) {
+      props.set('padding-top', '0');
+      props.set('padding-right', '0');
+      props.set('padding-bottom', '0');
+      props.set('padding-left', '0');
+    }
+
+    const styleValue = styleMapToString(props);
+    if (styleValue) {
+      td.setAttribute('style', styleValue);
+    }
+  });
+}
+
+/**
+ * Normalize inline styles to avoid shorthand spacing and provide alignment fallbacks.
+ * @param {Document} doc
+ */
+function normalizeInlineStyles(doc) {
+  if (!doc) {
+    return;
+  }
+
+  const styledElements = doc.querySelectorAll('[style]');
+  styledElements.forEach(element => {
+    const props = parseStyleAttribute(element.getAttribute('style'));
+
+    expandSpacingShorthand(props, 'margin');
+    expandSpacingShorthand(props, 'padding');
+
+    if (element.tagName === 'TABLE') {
+      const marginLeft = props.get('margin-left');
+      const marginRight = props.get('margin-right');
+      if (marginLeft === 'auto' && marginRight === 'auto') {
+        if (!element.getAttribute('align')) {
+          element.setAttribute('align', 'center');
+        }
+        props.set('margin-left', '0');
+        props.set('margin-right', '0');
+      }
+    }
+
+    const styleValue = styleMapToString(props);
+    if (styleValue) {
+      element.setAttribute('style', styleValue);
+    } else {
+      element.removeAttribute('style');
+    }
+  });
 }
 
 /**
