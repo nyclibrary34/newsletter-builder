@@ -1006,7 +1006,7 @@ endblock %} {% block extra_css %}
     );
     document.getElementById(
       "currentDimensions"
-    ).textContent = `${image.width} × ${image.height}`;
+    ).textContent = `${image.width} Ã— ${image.height}`;
     document.getElementById("currentImageInfo").style.display = "block";
 
     // Update and show filename editor
@@ -1034,7 +1034,7 @@ endblock %} {% block extra_css %}
         : "Calculating...";
       document.getElementById(
         "enhancedDimensions"
-      ).textContent = `${processed.width} × ${processed.height}`;
+      ).textContent = `${processed.width} Ã— ${processed.height}`;
       document.getElementById("compressionQuality").textContent =
         processed.finalQuality || "Processing...";
       enhancedInfo.style.display = "block";
@@ -1096,8 +1096,8 @@ endblock %} {% block extra_css %}
     const btn = document.getElementById("autoEnhanceToggle");
     btn.classList.toggle("active");
     btn.textContent = autoEnhance
-      ? "✨ Auto-Enhance: ON"
-      : "✨ Auto-Enhance: OFF";
+      ? "âœ¨ Auto-Enhance: ON"
+      : "âœ¨ Auto-Enhance: OFF";
   }
 
   // Enhance images starting from a given index
@@ -1332,7 +1332,7 @@ endblock %} {% block extra_css %}
         if (imageItem && !imageItem.querySelector(".enhancement-indicator")) {
           const indicator = document.createElement("div");
           indicator.className = "enhancement-indicator";
-          indicator.textContent = "✨";
+          indicator.textContent = "âœ¨";
           imageItem.appendChild(indicator);
         }
 

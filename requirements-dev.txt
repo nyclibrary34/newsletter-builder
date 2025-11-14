@@ -23,3 +23,6 @@ python-dotenv==1.0.0
 # Type Hints
 types-requests==2.31.0.2
 types-pillow==10.0.0.3
+
+# HTML parsing utilities for tooling
+beautifulsoup4==4.14.2
