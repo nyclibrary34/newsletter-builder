@@ -857,6 +857,26 @@ JavaScript APIs Used:
     select: true,
   });
 
+  blockManager.add('text-divider-block', {
+    label: 'Text Divider',
+    category: 'Content',
+    media: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <rect x="6" y="30" width="52" height="6" rx="3" fill="#000" />
+    </svg>`,
+    content: `
+      <table class="text-divider-block" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+        <tbody>
+          <tr>
+            <td style="padding: 20px 24px;">
+              <hr style="border:none; border-top:2px solid #000000; margin:0 auto 20px; width:100%; max-width:640px;" />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    `,
+    select: true,
+  });
+
   editor.addStyle(`
     .image-caption-block img {
       display: block;
@@ -928,6 +948,13 @@ JavaScript APIs Used:
     }
     .bullet-list-block li:last-child {
       margin-bottom: 0;
+    }
+    .text-divider-block hr {
+      border: none;
+      border-top: 2px solid #000000;
+      width: 100%;
+      max-width: 640px;
+      margin: 20px auto;
     }
     @media only screen and (max-width: 600px) {
       .image-left-text-block tr {
