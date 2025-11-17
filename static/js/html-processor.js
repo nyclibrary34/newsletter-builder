@@ -17,7 +17,7 @@ function generateUUID() {
 }
 
 
-const PREVIEW_TEXT = 'Municipal Library Notes (Optional)';
+const PREVIEW_TEXT = 'Municipal Library Notes';
 
 const SMART_CHAR_MAP = new Map([
   ['\u2018', "'"],
@@ -185,7 +185,7 @@ function ensurePreviewText(doc) {
     if (!existingStyle.includes('max-height')) {
       existingPreview.setAttribute(
         'style',
-        'max-height: 0px; overflow-x: hidden; overflow-y: hidden'
+        'display: none; max-height: 0px; overflow: hidden'
       );
     }
     return;
@@ -207,7 +207,7 @@ function ensurePreviewText(doc) {
   const previewDiv = doc.createElement('div');
   previewDiv.setAttribute('aria-hidden', 'true');
   previewDiv.setAttribute('id', 'id-e784080a-da99-4659-8d9c-960b25096c4c');
-  previewDiv.setAttribute('style', 'max-height: 0px; overflow-x: hidden; overflow-y: hidden');
+  previewDiv.setAttribute('style', 'display: none; max-height: 0px; overflow: hidden');
   previewDiv.textContent = PREVIEW_TEXT;
   
   // Insert after the BEGIN comment
@@ -403,6 +403,7 @@ function fixEmailCompatibility(doc) {
   fixFooterLinkColors(doc);
   
   // Clean up temporary preservation attributes
+  // NOTE: data-gjs-* attributes are intentionally preserved for editability
   doc.querySelectorAll('[data-preserve-layout], [data-preserve-center]').forEach(element => {
     element.removeAttribute('data-preserve-layout');
     element.removeAttribute('data-preserve-center');
@@ -727,6 +728,47 @@ function replaceIDs(doc) {
   });
 }
 
+// Whitelist of GrapesJS attributes to preserve for editability
+const PRESERVE_ATTRIBUTES = [
+  'data-gjs-type',
+  'data-gjs-editable',
+  'data-gjs-draggable',
+  'data-gjs-droppable',
+  'data-gjs-removable',
+  'data-gjs-copyable',
+  'data-gjs-resizable',
+  'data-gjs-name',
+  'data-gjs-stylable'
+];
+
+/**
+ * Mark editable cells and text elements with GrapesJS type markers
+ * This ensures content remains editable after re-import
+ * @param {Document} doc - Document object
+ */
+function markEditableCells(doc) {
+  if (!doc) return;
+
+  // Find all potential text containers
+  const textContainers = doc.querySelectorAll('td, th, p, h1, h2, h3, h4, h5, h6, div');
+
+  textContainers.forEach(el => {
+    // Check if element has meaningful text content
+    const hasText = el.textContent && el.textContent.trim().length > 0;
+
+    // Avoid marking structural elements
+    const hasNoTables = !el.querySelector('table');
+    const hasNoImages = !el.querySelector('img');
+    const notPreview = !el.hasAttribute('aria-hidden');
+
+    if (hasText && hasNoTables && hasNoImages && notPreview) {
+      // Mark as text component for GrapesJS editability
+      el.setAttribute('data-gjs-type', 'text');
+      el.setAttribute('data-gjs-editable', 'true');
+    }
+  });
+}
+
 /**
  * Main processing function - match juice server behavior exactly
  * Only process styles that would actually be inlined by juice library
@@ -737,13 +779,13 @@ function processHTML(htmlContent) {
   // Create a new document from the HTML content
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlContent, 'text/html');
-  
+
   // Fix common structural issues from GrapesJS export
   fixDocumentStructure(doc);
-  
+
   // Ensure preview text is present
   ensurePreviewText(doc);
-  
+
   // Normalize text content to prevent encoding glitches
   normalizeTextContent(doc);
   
@@ -804,7 +846,10 @@ function processHTML(htmlContent) {
   ensureBodyTypography(doc);
   applyDefaultCellStyles(doc);
   normalizeInlineStyles(doc);
-  
+
+  // Mark editable cells for GrapesJS re-import (NEW)
+  markEditableCells(doc);
+
   // Return the processed HTML with proper DOCTYPE
   return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
 }
@@ -1011,7 +1056,7 @@ function ensureBodyTypography(doc) {
   const props = parseStyleAttribute(body.getAttribute('style'));
   const defaults = {
     'font-family': 'Arial, Helvetica, sans-serif',
-    'line-height': '1.5',
+    'line-height': '1.65',
     'color': '#111111',
     '-webkit-text-size-adjust': '100%',
     'text-size-adjust': '100%',
@@ -1067,7 +1112,7 @@ function applyDefaultCellStyles(doc) {
       props.set('font-size', '16px');
     }
     if (!props.has('line-height')) {
-      props.set('line-height', '1.5');
+      props.set('line-height', '1.65');
     }
     if (!props.has('mso-line-height-rule')) {
       props.set('mso-line-height-rule', 'exactly');
