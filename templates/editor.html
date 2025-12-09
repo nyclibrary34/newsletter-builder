@@ -343,6 +343,144 @@ JavaScript APIs Used:
 
   bindCkeditorPasteSanitizer();
 
+  const CKEDITOR_INLINE_ELEMENTS = ['SPAN', 'A', 'STRONG', 'EM', 'B', 'I', 'U', 'STRIKE'];
+
+  const ckeditorToolbarHandler = function (el) {
+    el.style.minWidth = "350px";
+  };
+
+  const ckeditorOptions = {
+    startupFocus: true,
+    extraAllowedContent: "a[!href,target,title,rel]",
+    allowedContent: true,
+    enterMode: 2,
+    extraPlugins: "sharedspace,justify,colorbutton,panelbutton,font",
+    versionCheck: false,
+    pasteFromWordRemoveFontStyles: true,
+    pasteFromWordRemoveStyles: true,
+    forcePasteAsPlainText: false,
+    removeFormatAttributes: "style lang width height color align",
+    toolbar: [
+      { name: "styles", items: ["Font", "FontSize"] },
+      ["Bold", "Italic", "Underline", "Strike"],
+      { name: "paragraph", items: ["NumberedList", "BulletedList"] },
+      { name: "links", items: ["Link", "Unlink"] },
+      { name: "colors", items: ["TextColor", "BGColor"] },
+    ],
+  };
+
+  function buildCkeditorConfig(toolbarEl) {
+    const sharedSpacePlugin = 'sharedspace';
+    const config = Object.assign({}, ckeditorOptions);
+    const extraPlugins = (config.extraPlugins || '')
+      .split(',')
+      .map((plugin) => plugin.trim())
+      .filter(Boolean);
+
+    if (extraPlugins.indexOf(sharedSpacePlugin) === -1) {
+      extraPlugins.unshift(sharedSpacePlugin);
+    }
+
+    config.extraPlugins = extraPlugins.join(',');
+    config.sharedSpaces = config.sharedSpaces || { top: toolbarEl };
+    return config;
+  }
+
+  function stopDialogMousedown(event) {
+    event.stopPropagation();
+  }
+
+  function enableCkeditorRte(el, rte) {
+    if (!el) {
+      return rte;
+    }
+
+    if (CKEDITOR_INLINE_ELEMENTS.indexOf(el.tagName) !== -1) {
+      el.contentEditable = true;
+      if (el.focus) {
+        el.focus();
+      }
+      return rte;
+    }
+
+    var toolbarEl = editor.RichTextEditor.getToolbarEl();
+
+    if (rte && rte.status !== 'destroyed') {
+      el.contentEditable = true;
+      if (rte.focus) {
+        rte.focus();
+      }
+      return rte;
+    }
+
+    if (!window.CKEDITOR) {
+      console.warn('CKEditor not available; using native contentEditable.');
+      el.contentEditable = true;
+      if (el.focus) {
+        el.focus();
+      }
+      return null;
+    }
+
+    Array.from(toolbarEl.children).forEach(function (child) {
+      child.style.display = 'none';
+    });
+
+    var instance = window.CKEDITOR.inline(el, buildCkeditorConfig(toolbarEl));
+
+    instance.on('contentDom', function () {
+      var editable = instance.editable();
+      editable.attachListener(editable, 'click', function () {
+        return el.click();
+      });
+    });
+
+    instance.on('instanceReady', function () {
+      var toolbarId = 'cke_' + instance.name;
+      var toolbar = toolbarEl.querySelector('#' + toolbarId);
+      if (toolbar) {
+        toolbar.style.display = 'block';
+        ckeditorToolbarHandler(toolbar);
+      }
+      editor.refresh();
+      window.setTimeout(function () {
+        editor.refresh();
+      }, 0);
+    });
+
+    instance.on('dialogShow', function () {
+      var covers = document.querySelectorAll('.cke_dialog_background_cover, .cke_dialog_container');
+      covers.forEach(function (cover) {
+        cover.removeEventListener('mousedown', stopDialogMousedown);
+        cover.addEventListener('mousedown', stopDialogMousedown);
+      });
+    });
+
+    instance.on('key', function (evt) {
+      if (evt && evt.data && evt.data.keyCode === 13) {
+        window.setTimeout(function () {
+          editor.refresh();
+        }, 0);
+      }
+    });
+
+    el.contentEditable = true;
+    if (instance.focus) {
+      instance.focus();
+    }
+
+    return instance;
+  }
+
+  function disableCkeditorRte(el, rte) {
+    if (el) {
+      el.contentEditable = false;
+    }
+    if (rte && rte.destroy) {
+      rte.destroy();
+    }
+  }
+
   // Initialize GrapesJS editor with comprehensive configuration
   var editor = grapesjs.init({
     // ===== CORE EDITOR SETTINGS =====
@@ -460,50 +598,11 @@ JavaScript APIs Used:
       
       // --- CKEditor Rich Text Plugin Configuration ---
       "grapesjs-plugin-ckeditor": {
-        onToolbar: (el) => {
-          el.style.minWidth = "350px";            // Ensure toolbar has minimum width
-        },
-        options: {
-          startupFocus: true,                     // Auto-focus editor on load
-          extraAllowedContent: "a[!href,target,title,rel]",   // Allow anchor attributes while filtering Word styles
-          allowedContent: true,                   // Disable auto-formatting and class removal
-          enterMode: 2,                           // Use <br> tags instead of <p> for line breaks
-          extraPlugins: "sharedspace,justify,colorbutton,panelbutton,font",  // Additional CKEditor plugins
-          versionCheck: false,                    // Disable version checking
-          pasteFromWordRemoveFontStyles: true,          // Strip font metadata from Word paste
-          pasteFromWordRemoveStyles: true,               // Remove inline styling from Word paste
-          forcePasteAsPlainText: false,                  // Keep hyperlinks and structural markup
-          removeFormatAttributes: "style lang width height color align", // Additional cleanup for paste
-          
-          // --- CKEditor Toolbar Configuration ---
-          toolbar: [
-            { name: "styles", items: ["Font", "FontSize"] },                    // Font family and size
-            ["Bold", "Italic", "Underline", "Strike"],                         // Text formatting
-            { name: "paragraph", items: ["NumberedList", "BulletedList"] },    // Lists
-            { name: "links", items: ["Link", "Unlink"] },                      // Hyperlinks
-            { name: "colors", items: ["TextColor", "BGColor"] },               // Text and background colors
-          ],
-        },
-        // Filter out inline elements (span) that CKEditor doesn't support in inline mode
+        onToolbar: ckeditorToolbarHandler,
+        options: ckeditorOptions,
         customRte: {
-          enable: function(el, rte) {
-            // CKEditor inline mode only supports block-level elements
-            // Skip span, a, strong, em, and other inline elements to prevent errors
-            const inlineElements = ['SPAN', 'A', 'STRONG', 'EM', 'B', 'I', 'U', 'STRIKE'];
-            if (inlineElements.includes(el.tagName)) {
-              // Make element editable without CKEditor for inline elements
-              el.contentEditable = true;
-              return null; // Don't activate CKEditor
-            }
-            // For block elements, let the plugin handle CKEditor initialization normally
-            return undefined;
-          },
-          disable: function(el, rte) {
-            el.contentEditable = false;
-            if (rte && rte.destroy) {
-              rte.destroy();
-            }
-          }
+          enable: enableCkeditorRte,
+          disable: disableCkeditorRte,
         }
       },
     },
@@ -514,53 +613,6 @@ JavaScript APIs Used:
   var cmdm = editor.Commands;     // Command manager for defining custom actions
 
   var blockManager = editor.BlockManager;  // Block manager for drag-and-drop blocks
-
-  // ========================================================================
-  // COMPONENT TYPE REGISTRATION - Register custom component types for editability
-  // ========================================================================
-
-  // Register text-cell component to make table cells editable
-  editor.DomComponents.addType('text-cell', {
-    isComponent: el => {
-      if (el.tagName === 'TD') {
-        const hasText = el.textContent && el.textContent.trim().length > 0;
-        const hasNoTables = !el.querySelector('table');
-        return hasText && hasNoTables;
-      }
-      return false;
-    },
-    model: {
-      defaults: {
-        editable: true,
-        droppable: true,
-        traits: ['id', 'title'],
-        attributes: { 'data-gjs-type': 'text' }
-      }
-    }
-  });
-
-  // ========================================================================
-  // COMPONENT MOUNT HANDLER - Ensure editability at runtime
-  // ========================================================================
-
-  editor.on('component:mount', (component) => {
-    const tagName = component.get('tagName')?.toLowerCase();
-    const el = component.getEl();
-
-    // Make text containers editable on mount
-    if (['td', 'th', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'div'].includes(tagName)) {
-      if (el && el.textContent && el.textContent.trim().length > 0) {
-        const hasNoTables = !el.querySelector('table');
-        const hasNoImages = !el.querySelector('img');
-
-        if (hasNoTables && hasNoImages) {
-          component.set('editable', true);
-          component.set('type', 'text');
-          console.log('[EDITABILITY] Made component editable on mount:', tagName, el.textContent.substring(0, 30) + '...');
-        }
-      }
-    }
-  });
 
   const fileId = "{{ file_id }}";              // File identifier shared across save routines
 
@@ -621,7 +673,6 @@ JavaScript APIs Used:
       return { fullHtml: '', snapshot: '' };
     }
 
-    // Get clean HTML for email sending
     let html = editor.getHtml();
     html = ensureAlignmentStyles(html);         // Preserve alignment before saving
 
@@ -634,27 +685,6 @@ JavaScript APIs Used:
 </head>
 <body>${html}</body>
 </html>`;
-
-    // DUAL EXPORT STRATEGY: Save editor version with data-gjs-* attributes
-    // This allows re-editing without losing component types
-    const editorHtml = editor.getHtml({ withProps: true });
-    const editorFullHtml = `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>${css}</style>
-</head>
-<body>${editorHtml}</body>
-</html>`;
-
-    // Store editor version in localStorage for re-editing
-    try {
-      localStorage.setItem('newsletter_editor_html', editorHtml);
-      localStorage.setItem('newsletter_editor_css', css);
-      localStorage.setItem('newsletter_editor_full', editorFullHtml);
-    } catch (e) {
-      console.warn('Could not save editor version to localStorage:', e);
-    }
 
     return {
       fullHtml,
@@ -1219,43 +1249,11 @@ JavaScript APIs Used:
       });
       
       try {
-        // --- DUAL EXPORT STRATEGY - ENHANCED ---
-        // Save editor version with data-gjs-* attributes for re-editing
-        const rawEditorHtml = editor.getHtml();
-        const editorCss = editor.getCss();
-
-        // Manually add editability markers to editor version
-        const parser = new DOMParser();
-        const editorDoc = parser.parseFromString(rawEditorHtml, 'text/html');
-
-        // Mark all editable elements in the editor version
-        editorDoc.querySelectorAll('td, th, p, h1, h2, h3, h4, h5, h6, div').forEach(el => {
-          const hasText = el.textContent && el.textContent.trim().length > 0;
-          const hasNoTables = !el.querySelector('table');
-          const hasNoImages = !el.querySelector('img');
-          const notPreview = !el.hasAttribute('aria-hidden');
-
-          if (hasText && hasNoTables && hasNoImages && notPreview) {
-            el.setAttribute('data-gjs-type', 'text');
-            el.setAttribute('data-gjs-editable', 'true');
-          }
-        });
-
-        const markedEditorHtml = editorDoc.documentElement.outerHTML;
-
-        try {
-          localStorage.setItem('newsletter_editor_html', markedEditorHtml);
-          localStorage.setItem('newsletter_editor_css', editorCss);
-          console.log('[EDITABILITY] Saved editor version with markers to localStorage');
-        } catch (e) {
-          console.warn('[EDITABILITY] Could not save editor version to localStorage:', e);
-        }
-
         // --- Extract Content from Editor ---
-        let html = editor.getHtml();                // Get clean HTML for email
-        const rawCss = editorCss;                   // Use same CSS
+        let html = editor.getHtml();                // Get HTML content from canvas
+        const rawCss = editor.getCss();             // Get raw CSS styles from editor
         const css = sanitizeCssForEmail(rawCss);    // Sanitize CSS for email compatibility
-
+        
         // --- Ensure alignment styles are preserved BEFORE processing ---
         html = ensureAlignmentStyles(html);         // Add inline styles for logos/icons
         
@@ -1433,115 +1431,6 @@ JavaScript APIs Used:
   }
 
   // ========================================================================
-  // POST-IMPORT NORMALIZATION - Annotate editable components after import
-  // ========================================================================
-
-  /**
-   * Annotates text components with editability markers after import
-   * This ensures re-imported HTML remains editable even if data-gjs-* attributes were stripped
-   * ENHANCED: Now includes recursive processing and comprehensive logging
-   */
-  function annotateEditableComponents() {
-    console.log('[EDITABILITY] Starting post-import normalization...');
-
-    try {
-      const wrapper = editor.getWrapper();
-      if (!wrapper) {
-        console.warn('[EDITABILITY] No wrapper found for normalization');
-        return;
-      }
-
-      const allComponents = wrapper.components();
-      console.log('[EDITABILITY] Found', allComponents.length, 'top-level components');
-
-      let annotatedCount = 0;
-      let processedCount = 0;
-
-      // Recursively process all components
-      function processComponent(component, depth = 0) {
-        processedCount++;
-        const tagName = component.get('tagName')?.toLowerCase();
-        const componentType = component.get('type');
-        const el = component.getEl();
-
-        console.log(`[EDITABILITY] Processing (depth ${depth}): ${tagName}, type: ${componentType}`);
-
-        // Target text containers
-        if (['td', 'th', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'div', 'a', 'span'].includes(tagName)) {
-          if (el && hasTextContent(el) && !hasStructuralChildren(component)) {
-            try {
-              // Set component type to text
-              component.set('type', 'text');
-              component.set('editable', true);
-              component.set('droppable', true);
-              component.set('selectable', true);
-
-              // Add editability attributes
-              component.addAttributes({
-                'data-gjs-type': 'text',
-                'data-gjs-editable': 'true',
-                'contenteditable': 'true'
-              });
-
-              annotatedCount++;
-              const preview = el.textContent.substring(0, 50).replace(/\n/g, ' ');
-              console.log(`[EDITABILITY] ✓ Marked ${tagName} as editable:`, preview + '...');
-            } catch (err) {
-              console.error(`[EDITABILITY] Error marking ${tagName}:`, err);
-            }
-          } else {
-            if (!el) console.log(`[EDITABILITY] ✗ No element for ${tagName}`);
-            else if (!hasTextContent(el)) console.log(`[EDITABILITY] ✗ No text in ${tagName}`);
-            else console.log(`[EDITABILITY] ✗ Has structural children:`, tagName);
-          }
-        }
-
-        // Recursively process children
-        const children = component.components();
-        if (children && children.length > 0) {
-          children.forEach(child => processComponent(child, depth + 1));
-        }
-      }
-
-      // Process all top-level components
-      allComponents.forEach(component => processComponent(component, 0));
-
-      console.log(`[EDITABILITY] Processed ${processedCount} components total`);
-      console.log(`[EDITABILITY] Annotated ${annotatedCount} components as editable`);
-
-      // Force editor refresh to apply changes
-      editor.refresh();
-
-      console.log(`[EDITABILITY] Post-import normalization complete!`);
-
-      // If nothing was annotated, that's a problem
-      if (annotatedCount === 0) {
-        console.error('[EDITABILITY] WARNING: No components were annotated! This might indicate a problem.');
-      }
-    } catch (error) {
-      console.error('[EDITABILITY] Error during normalization:', error);
-    }
-  }
-
-  /**
-   * Check if element has meaningful text content
-   */
-  function hasTextContent(el) {
-    return el.textContent && el.textContent.trim().length > 0;
-  }
-
-  /**
-   * Check if component has structural (non-text) children
-   */
-  function hasStructuralChildren(component) {
-    const children = component.components();
-    return children.some(child => {
-      const type = child.get('type');
-      return type === 'image' || type === 'video' || type === 'table';
-    });
-  }
-
-  // ========================================================================
   // EDITOR READY EVENT - Load existing content when editor initializes
   // ========================================================================
   editor.onReady(function () {
@@ -1564,46 +1453,39 @@ JavaScript APIs Used:
         .then((data) => {
           // Parse the saved HTML to extract body content and styles
           try {
-            // DUAL IMPORT STRATEGY: Try editor version first (with data-gjs-* attributes)
-            let htmlToLoad = localStorage.getItem('newsletter_editor_html');
-            let cssToLoad = localStorage.getItem('newsletter_editor_css');
-
-            // Fallback to saved server content if no editor version exists
-            if (!htmlToLoad) {
-              const parser = new DOMParser();
-              const doc = parser.parseFromString(data, 'text/html');
-
-              if (doc && doc.body) {
-                htmlToLoad = doc.body.innerHTML;
-                cssToLoad = Array.from(doc.querySelectorAll('style'))
-                  .map(s => s.textContent || '')
-                  .join('\n');
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(data, 'text/html');
+            
+            if (doc && doc.body) {
+              // Extract body HTML for components
+              const bodyHtml = doc.body.innerHTML;
+              
+              // Extract all styles from style tags
+              const styles = Array.from(doc.querySelectorAll('style'))
+                .map(s => s.textContent || '')
+                .join('\n');
+              
+              // IMPORTANT: Set both components AND styles to preserve everything
+              // The order matters - set components first, then styles
+              if (bodyHtml) {
+                editor.setComponents(bodyHtml);
               }
+              
+              if (styles && styles.trim()) {
+                // Set the styles after components to ensure they apply correctly
+                editor.setStyle(styles);
+              }
+              
+              console.log('Content loaded successfully');
+            } else {
+              // Fallback: load raw HTML if parsing fails
+              editor.setComponents(data);
+              console.warn('Loaded raw HTML as fallback');
             }
-
-            // Load components and styles
-            if (htmlToLoad) {
-              editor.setComponents(htmlToLoad);
-            }
-
-            if (cssToLoad && cssToLoad.trim()) {
-              editor.setStyle(cssToLoad);
-            }
-
-            // Annotate components for editability after import
-            // Use setTimeout to ensure components are fully mounted
-            setTimeout(() => {
-              annotateEditableComponents();
-            }, 100);
-
-            console.log('Content loaded successfully (editor version:', !!localStorage.getItem('newsletter_editor_html'), ')');
           } catch (e) {
             console.error('Failed to parse saved HTML:', e);
             // Last resort: just load the raw HTML
             editor.setComponents(data);
-            setTimeout(() => {
-              annotateEditableComponents();
-            }, 100);
           }
         })  // Load content into editor
         .catch((error) => {
