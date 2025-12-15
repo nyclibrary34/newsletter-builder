@@ -567,11 +567,10 @@ JavaScript APIs Used:
     `,
     
     // ===== LOCAL STORAGE CONFIGURATION =====
-    storageManager: {
-      options: {
-        local: { key: "gjsProjectNl" },           // Local storage key for auto-save
-      },
-    },
+    // IMPORTANT: Storage is DISABLED to prevent ghost content from previous files
+    // Content is loaded exclusively from the server via /content/{fileId}
+    // Auto-save is handled separately via the autosave system
+    storageManager: false,
     
     // ===== PLUGIN CONFIGURATION =====
     plugins: ["grapesjs-preset-newsletter", "grapesjs-plugin-ckeditor"],
@@ -1434,6 +1433,18 @@ JavaScript APIs Used:
   // EDITOR READY EVENT - Load existing content when editor initializes
   // ========================================================================
   editor.onReady(function () {
+    // Clear any leftover localStorage data from old storage system
+    // This prevents "ghost content" from previous editing sessions
+    try {
+      localStorage.removeItem('gjsProjectNl');
+      localStorage.removeItem('gjs-components');
+      localStorage.removeItem('gjs-styles');
+      localStorage.removeItem('gjs-html');
+      localStorage.removeItem('gjs-css');
+    } catch (e) {
+      console.warn('Could not clear localStorage:', e);
+    }
+
     setAutosaveStatus('Loading content...', 'saving');
 
     const finalizeLoad = () => {
