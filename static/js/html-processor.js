@@ -842,13 +842,16 @@ function processHTML(htmlContent) {
   // Fix email compatibility issues
   fixEmailCompatibility(doc);
 
+  // Mark editable cells before typography normalization so GrapesJS text
+  // containers receive the same export cleanup as paragraphs.
+  markEditableCells(doc);
+
   // Apply baseline typography and inline normalization
   ensureBodyTypography(doc);
   applyDefaultCellStyles(doc);
+  applyDefaultTextBlockStyles(doc);
+  normalizeInlineTypography(doc);
   normalizeInlineStyles(doc);
-
-  // Mark editable cells for GrapesJS re-import (NEW)
-  markEditableCells(doc);
 
   // Return the processed HTML with proper DOCTYPE
   return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
@@ -1132,6 +1135,87 @@ function applyDefaultCellStyles(doc) {
     const styleValue = styleMapToString(props);
     if (styleValue) {
       td.setAttribute('style', styleValue);
+    }
+  });
+}
+
+/**
+ * Apply baseline typography to paragraph-like text blocks so clients inherit a
+ * consistent font stack and line height after inline cleanup.
+ * @param {Document} doc
+ */
+function applyDefaultTextBlockStyles(doc) {
+  if (!doc) {
+    return;
+  }
+
+  const textBlocks = doc.querySelectorAll('p, li, blockquote, div[data-gjs-type="text"], td[data-gjs-type="text"]');
+  textBlocks.forEach(block => {
+    const props = parseStyleAttribute(block.getAttribute('style'));
+
+    if (!props.has('font-family')) {
+      props.set('font-family', 'Arial, Helvetica, sans-serif');
+    }
+    if (!props.has('font-size')) {
+      props.set('font-size', '16px');
+    }
+    if (!props.has('line-height')) {
+      props.set('line-height', '1.65');
+    }
+    if (!props.has('mso-line-height-rule')) {
+      props.set('mso-line-height-rule', 'exactly');
+    }
+
+    const styleValue = styleMapToString(props);
+    if (styleValue) {
+      block.setAttribute('style', styleValue);
+    } else {
+      block.removeAttribute('style');
+    }
+  });
+}
+
+/**
+ * Strip pasted/imported inline typography that conflicts with the surrounding
+ * paragraph while preserving semantics like emphasis and link styling.
+ * @param {Document} doc
+ */
+function normalizeInlineTypography(doc) {
+  if (!doc) {
+    return;
+  }
+
+  const inlineSelector = 'span, font, a, strong, em, b, i, u, s, strike, small';
+  const typographyProps = [
+    'font-family',
+    'font-size',
+    'line-height',
+    'mso-line-height-rule'
+  ];
+  const cleanupProps = [
+    'vertical-align',
+    'user-select',
+    '-webkit-user-drag',
+    '-webkit-tap-highlight-color'
+  ];
+
+  doc.querySelectorAll(inlineSelector).forEach(node => {
+    const props = parseStyleAttribute(node.getAttribute('style'));
+    if (props.size === 0) {
+      return;
+    }
+
+    typographyProps.forEach(prop => props.delete(prop));
+
+    if (node.tagName === 'SPAN' || node.tagName === 'FONT') {
+      cleanupProps.forEach(prop => props.delete(prop));
+    }
+
+    const styleValue = styleMapToString(props);
+    if (styleValue) {
+      node.setAttribute('style', styleValue);
+    } else {
+      node.removeAttribute('style');
     }
   });
 }
