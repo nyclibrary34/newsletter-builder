@@ -197,6 +197,9 @@ JavaScript APIs Used:
      GRAPESJS JAVASCRIPT DEPENDENCIES
      ======================================================================== -->
 
+<!-- Shared email typography constants - must load before GrapesJS init -->
+<script src="{{ url_for('static', filename='js/email-typography.js') }}"></script>
+
 <!-- GrapesJS Core Library: Main visual page builder framework -->
 <script src="{{ url_for('static', filename='js/grapes.min.js') }}"></script>
 
