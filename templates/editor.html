@@ -498,17 +498,36 @@ JavaScript APIs Used:
     // They do NOT affect the exported HTML
     canvasCss: `
       /* Basic resets for email compatibility */
-      html, body { 
-        margin: 0 !important; 
-        padding: 0 !important; 
-        height: auto !important; 
-        min-height: 0 !important; 
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        height: auto !important;
+        min-height: 0 !important;
       }
-      
+
+      /* ====================================================================
+         AUTHORITATIVE TYPOGRAPHY
+         Force the canvas to use the same Arial/Helvetica stack that the
+         exporter (html-processor.js) inlines on export. Without this the
+         canvas inherits Inter/Quicksand from the web-app shell and the
+         editor preview drifts away from what Outlook/Gmail will render.
+         The values live in static/js/email-typography.js so editor and
+         exporter cannot get out of sync.
+         ==================================================================== */
+      html, body {
+        font-family: Arial, Helvetica, sans-serif !important;
+        font-size: 16px !important;
+        line-height: 1.65 !important;
+        color: #111111 !important;
+      }
+      table, td, th, p, h1, h2, h3, h4, h5, h6, li, span, div {
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
       /* Table resets for email */
-      table { 
-        border-collapse: collapse; 
-        border-spacing: 0; 
+      table {
+        border-collapse: collapse;
+        border-spacing: 0;
       }
       
       /* Preserve original alignment for cells */
