@@ -845,6 +845,7 @@ function processHTML(htmlContent) {
   // Apply baseline typography and inline normalization
   ensureBodyTypography(doc);
   applyDefaultCellStyles(doc);
+  normalizeTextElementFonts(doc);
   normalizeInlineStyles(doc);
 
   // Mark editable cells for GrapesJS re-import (NEW)
@@ -1073,7 +1074,15 @@ function ensureBodyTypography(doc) {
   };
 
   Object.entries(defaults).forEach(([prop, value]) => {
-    if (!props.has(prop)) {
+    if (prop === 'font-family') {
+      // Always force email-safe font-family on body so it cascades to any
+      // text without an explicit inline font.
+      const existing = props.get('font-family');
+      const EMAIL_SAFE = /(arial|helvetica|verdana|tahoma|georgia|times|courier|sans-serif|serif|monospace)/i;
+      if (!existing || !EMAIL_SAFE.test(existing)) {
+        props.set('font-family', value);
+      }
+    } else if (!props.has(prop)) {
       props.set(prop, value);
     }
   });
@@ -1091,6 +1100,32 @@ function ensureBodyTypography(doc) {
 }
 
 /**
+ * Force email-safe font-family on every text-bearing element so the
+ * exported HTML matches what the GrapesJS editor canvas displays.
+ * Fonts like Inter, Quicksand, or Calibri (common when users paste from
+ * Word) get rewritten to the Arial stack. Generic CSS keywords and
+ * already-safe families (Helvetica, Verdana, Georgia, etc.) are left
+ * alone in case OTI specifically asks for one of those later.
+ * @param {Document} doc
+ */
+function normalizeTextElementFonts(doc) {
+  if (!doc) return;
+  var EMAIL_SAFE = /(arial|helvetica|verdana|tahoma|georgia|times|courier|sans-serif|serif|monospace)/i;
+  var selector = 'p, h1, h2, h3, h4, h5, h6, li, span, div, a';
+  doc.querySelectorAll(selector).forEach(function (el) {
+    var props = parseStyleAttribute(el.getAttribute('style'));
+    var existing = props.get('font-family');
+    if (!existing || !EMAIL_SAFE.test(existing)) {
+      props.set('font-family', 'Arial, Helvetica, sans-serif');
+    }
+    var styleValue = styleMapToString(props);
+    if (styleValue) {
+      el.setAttribute('style', styleValue);
+    }
+  });
+}
+
+/**
  * Apply default typography styles to table cells lacking inline declarations.
  * @param {Document} doc
  */
@@ -1105,7 +1140,12 @@ function applyDefaultCellStyles(doc) {
     }
     const props = parseStyleAttribute(td.getAttribute('style'));
 
-    if (!props.has('font-family')) {
+    // Allow only email-safe sans-serif stacks. If the cell carries a font
+    // that Outlook won't render (Calibri, Inter, Quicksand, etc.), replace
+    // it so the export matches what the editor canvas displays.
+    var EMAIL_SAFE = /(arial|helvetica|verdana|tahoma|georgia|times|courier|sans-serif|serif|monospace)/i;
+    var existingFamily = props.get('font-family');
+    if (!existingFamily || !EMAIL_SAFE.test(existingFamily)) {
       props.set('font-family', 'Arial, Helvetica, sans-serif');
     }
     if (!props.has('font-size')) {
