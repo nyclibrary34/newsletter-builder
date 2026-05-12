@@ -347,6 +347,7 @@ JavaScript APIs Used:
   bindCkeditorPasteSanitizer();
 
   const CKEDITOR_INLINE_ELEMENTS = ['SPAN', 'A', 'STRONG', 'EM', 'B', 'I', 'U', 'STRIKE'];
+  const UNSUPPORTED_CKEDITOR_TEXT_ELEMENTS = ['UL', 'OL', 'LI'];
 
   const ckeditorToolbarHandler = function (el) {
     el.style.minWidth = "350px";
@@ -393,22 +394,53 @@ JavaScript APIs Used:
     event.stopPropagation();
   }
 
+  function isNativeEditableTextElement(el) {
+    if (!el || !el.tagName) {
+      return false;
+    }
+
+    return (
+      CKEDITOR_INLINE_ELEMENTS.indexOf(el.tagName) !== -1 ||
+      UNSUPPORTED_CKEDITOR_TEXT_ELEMENTS.indexOf(el.tagName) !== -1
+    );
+  }
+
+  function enableNativeContentEditable(el) {
+    el.contentEditable = true;
+    if (el.focus) {
+      el.focus();
+    }
+    return { nativeContentEditable: true };
+  }
+
+  function isActiveCkeditorInstance(rte) {
+    return rte && typeof rte.getData === 'function' && rte.status !== 'destroyed';
+  }
+
+  function getCkeditorContent(el, rte) {
+    if (rte && typeof rte.getData === 'function') {
+      return rte.getData();
+    }
+
+    if (!el) {
+      return '';
+    }
+
+    return el.innerHTML;
+  }
+
   function enableCkeditorRte(el, rte) {
     if (!el) {
       return rte;
     }
 
-    if (CKEDITOR_INLINE_ELEMENTS.indexOf(el.tagName) !== -1) {
-      el.contentEditable = true;
-      if (el.focus) {
-        el.focus();
-      }
-      return rte;
+    if (isNativeEditableTextElement(el)) {
+      return enableNativeContentEditable(el);
     }
 
     var toolbarEl = editor.RichTextEditor.getToolbarEl();
 
-    if (rte && rte.status !== 'destroyed') {
+    if (isActiveCkeditorInstance(rte)) {
       el.contentEditable = true;
       if (rte.focus) {
         rte.focus();
@@ -429,7 +461,13 @@ JavaScript APIs Used:
       child.style.display = 'none';
     });
 
-    var instance = window.CKEDITOR.inline(el, buildCkeditorConfig(toolbarEl));
+    var instance;
+    try {
+      instance = window.CKEDITOR.inline(el, buildCkeditorConfig(toolbarEl));
+    } catch (error) {
+      console.warn('CKEditor does not support this text element; using native contentEditable.', error);
+      return enableNativeContentEditable(el);
+    }
 
     instance.on('contentDom', function () {
       var editable = instance.editable();
@@ -623,6 +661,7 @@ JavaScript APIs Used:
         onToolbar: ckeditorToolbarHandler,
         options: ckeditorOptions,
         customRte: {
+          getContent: getCkeditorContent,
           enable: enableCkeditorRte,
           disable: disableCkeditorRte,
         }
