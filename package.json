@@ -1,0 +1,26 @@
+{
+  "name": "newsletter-builder",
+  "version": "1.0.0",
+  "description": "A comprehensive newsletter/email template editing application built with GrapesJS, featuring advanced image processing tools and HTML-to-PDF conversion capabilities. Optimized for email client compatibility with smart HTML processing.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "node --test tests/js/**/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nyclibrary34/newsletter-builder.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/nyclibrary34/newsletter-builder/issues"
+  },
+  "homepage": "https://github.com/nyclibrary34/newsletter-builder#readme",
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}
