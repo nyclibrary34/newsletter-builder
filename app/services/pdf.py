@@ -10,10 +10,14 @@ pagination breaks while preserving visual fidelity similar to the editor.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
+import mimetypes
 import os
+import re
 from io import BytesIO
 from typing import Any, Dict, Iterable, Optional, Tuple
+from urllib.parse import urlparse, parse_qs
 
 from PIL import Image
 import requests
@@ -34,6 +38,40 @@ except ImportError:
     Browser = None
     BrowserContext = None
     Page = None
+
+
+# Realistic desktop Chrome UA. nyc.gov's WAF returns 403 to the default
+# HeadlessChrome user-agent, which silently breaks every image in the PDF.
+BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
+_SAFELINKS_RE = re.compile(
+    r'https://[a-z0-9.-]*safelinks\.protection\.outlook\.com/\?[^"\'\s>]+',
+    re.IGNORECASE,
+)
+
+
+def normalize_image_sources(html: str) -> str:
+    """Unwrap Outlook SafeLinks URLs and rewrite legacy nyc.gov hosts.
+
+    Exported newsletters that round-tripped through Outlook carry image srcs
+    wrapped by SafeLinks; those URLs fail in a clean browser session.
+    """
+    def _unwrap(match: "re.Match") -> str:
+        wrapped = match.group(0).replace("&amp;", "&")
+        query = parse_qs(urlparse(wrapped).query)
+        target = query.get("url", [None])[0]
+
+        # Only accept unwrapped URL if it starts with http:// or https://
+        if target and target.lower().startswith(("http://", "https://")):
+            return target
+        return match.group(0)
+
+    html = _SAFELINKS_RE.sub(_unwrap, html)
+    html = html.replace("https://www1.nyc.gov/", "https://www.nyc.gov/")
+    return html
 
 
 class PDFService:
