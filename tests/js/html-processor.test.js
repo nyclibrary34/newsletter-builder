@@ -137,3 +137,30 @@ test('p with font-family in complex style preserves other properties', () => {
   assert.ok(pMatch && /font-family/i.test(pMatch[1]), 'p should have font-family');
   assert.ok(pMatch && /color/i.test(pMatch[1]), 'should preserve color property');
 });
+
+test('ensureMsoFontFallback adds MSO conditional comment to head', () => {
+  const out = processor.processHTML(wrap(
+    '<p>Test</p>'
+  ));
+  assert(out.includes('[if mso]'), 'should contain MSO conditional start');
+  assert(out.includes('data-mso-font-fallback'), 'should have mso-font-fallback marker');
+  assert(out.includes('font-family: Arial'), 'should set font-family to Arial in MSO style');
+  assert(out.includes('<![endif]'), 'should have MSO conditional end');
+});
+
+test('ensureMsoFontFallback is idempotent (no duplicate if already present)', () => {
+  const out = processor.processHTML(wrap(
+    '<p>Test</p>'
+  ));
+  // Count occurrences of the marker
+  const count = (out.match(/data-mso-font-fallback/g) || []).length;
+  assert.equal(count, 1, 'MSO fallback should appear exactly once');
+});
+
+test('ensureMsoFontFallback targets correct elements', () => {
+  const out = processor.processHTML(wrap(
+    '<p>Test</p>'
+  ));
+  assert(out.includes('body, table, td, p, h1, h2, h3, h4, h5, h6, li, a, span'),
+    'should target all email elements');
+});

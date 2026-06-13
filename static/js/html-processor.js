@@ -853,6 +853,26 @@ function applyDefaultTextStyles(doc) {
 }
 
 /**
+ * Append an Outlook-only conditional style so any element that slipped
+ * through inlining still renders Arial instead of Times New Roman.
+ * Intentionally NOT !important: inline (user-chosen) fonts must win.
+ * @param {Document} doc
+ */
+function ensureMsoFontFallback(doc) {
+  const head = doc.head;
+  if (!head || head.innerHTML.indexOf('mso-font-fallback') !== -1) {
+    return;
+  }
+  const comment = doc.createComment(
+    '[if mso]><style type="text/css" data-mso-font-fallback="true">' +
+    'body, table, td, p, h1, h2, h3, h4, h5, h6, li, a, span ' +
+    '{ font-family: Arial, Helvetica, sans-serif; }' +
+    '</style><![endif]'
+  );
+  head.appendChild(comment);
+}
+
+/**
  * Main processing function - match juice server behavior exactly
  * Only process styles that would actually be inlined by juice library
  * @param {string} htmlContent - Raw HTML content with <style> tags
@@ -918,7 +938,10 @@ function processHTML(htmlContent) {
   styleTags.forEach(styleTag => {
     styleTag.remove();
   });
-  
+
+  // Outlook-only font fallback (survives style-tag removal — it's a comment node)
+  ensureMsoFontFallback(doc);
+
   // Replace auto-generated IDs with UUIDs
   replaceIDs(doc);
   
@@ -1486,7 +1509,8 @@ if (typeof module !== 'undefined' && module.exports) {
     generateUUID,
     replaceIDs,
     resolveInheritTypography,
-    applyDefaultTextStyles
+    applyDefaultTextStyles,
+    ensureMsoFontFallback
   };
 } else {
   // Browser environment - attach to window
