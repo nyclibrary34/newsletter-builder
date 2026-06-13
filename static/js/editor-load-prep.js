@@ -1,0 +1,33 @@
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) {
+    module.exports = factory();
+  } else {
+    root.NewsletterEditorLoadPrep = factory();
+  }
+})(typeof self !== 'undefined' ? self : this, function () {
+  var INLINE_TAGS = ['B', 'STRONG', 'I', 'EM', 'U', 'STRIKE'];
+  var LAYOUT_PARENT_TAGS = ['TD', 'TH', 'DIV', 'BODY', 'TABLE', 'TR', 'TBODY', 'THEAD', 'TFOOT', 'SECTION', 'ARTICLE'];
+
+  function isStandaloneInline(el) {
+    if (!el || !el.parentElement) return false;
+    if (INLINE_TAGS.indexOf(el.tagName) === -1) return false;
+    return LAYOUT_PARENT_TAGS.indexOf(el.parentElement.tagName) !== -1;
+  }
+
+  function makeStandaloneInlineEditable(htmlString) {
+    if (typeof htmlString !== 'string' || htmlString.length === 0) {
+      return htmlString;
+    }
+    var doc = new DOMParser().parseFromString('<body>' + htmlString + '</body>', 'text/html');
+    var selector = INLINE_TAGS.map(function (t) { return t.toLowerCase(); }).join(',');
+    var nodes = doc.body.querySelectorAll(selector);
+    nodes.forEach(function (el) {
+      if (isStandaloneInline(el)) {
+        el.setAttribute('data-gjs-type', 'text');
+      }
+    });
+    return doc.body.innerHTML;
+  }
+
+  return { makeStandaloneInlineEditable: makeStandaloneInlineEditable };
+});
