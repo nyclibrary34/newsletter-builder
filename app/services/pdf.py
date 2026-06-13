@@ -128,7 +128,7 @@ class PDFService:
     MIN_VIEWPORT_WIDTH = 768
     MAX_VIEWPORT_WIDTH = 1600
     DEFAULT_VIEWPORT_HEIGHT = 1200
-    RENDER_DELAY_MS = 2000  # Increased for complex inline-styled HTML
+    RENDER_DELAY_MS = 250  # small settle buffer; image readiness is awaited explicitly
     BROWSERLESS_VIEWPORT_WIDTH = 880
     BROWSERLESS_DEVICE_SCALE_FACTOR = 2
 
@@ -251,6 +251,13 @@ class PDFService:
 
                     await page.set_content(prepared_html, wait_until="domcontentloaded")
                     await page.wait_for_load_state("networkidle", timeout=10000)
+                    try:
+                        await page.wait_for_function(
+                            "Array.from(document.images).every(img => img.complete)",
+                            timeout=5000,
+                        )
+                    except Exception:
+                        logging.warning("Timed out waiting for images to load; rendering anyway")
                     await page.wait_for_timeout(self.RENDER_DELAY_MS)
 
                     dimensions = await self._measure_page_dimensions(page)
@@ -312,7 +319,9 @@ class PDFService:
                 "height": self.DEFAULT_VIEWPORT_HEIGHT,
                 "deviceScaleFactor": self.BROWSERLESS_DEVICE_SCALE_FACTOR,
             },
-            "waitForTimeout": 2000,  # Extra render delay; supported top-level per Browserless v2 API
+            "waitForFunction": "Array.from(document.images).every(img => img.complete)",
+            "waitForFunctionTimeout": 5000,
+            "waitForTimeout": 250,  # small settle buffer; image readiness is awaited explicitly
         }
 
         def _post_request() -> Optional[bytes]:
