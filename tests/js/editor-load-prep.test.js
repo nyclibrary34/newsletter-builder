@@ -76,3 +76,38 @@ test('<h2> without data-gjs-type gets data-gjs-type="text"', () => {
   const h2 = doc.querySelector('h2');
   assert.equal(h2.getAttribute('data-gjs-type'), 'text', '<h2> heading must be typed text');
 });
+
+test('<h2> with existing data-gjs-type is not overwritten', () => {
+  const input = '<h2 data-gjs-type="custom">Special heading</h2>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString(`<body>${out}</body>`, 'text/html');
+  const h2 = doc.querySelector('h2');
+  assert.equal(h2.getAttribute('data-gjs-type'), 'custom', 'existing type must be respected');
+});
+
+test('all six heading levels get data-gjs-type="text"', () => {
+  const levels = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+  levels.forEach((tag) => {
+    const input = `<${tag}>Heading</${tag}>`;
+    const out = makeStandaloneInlineEditable(input);
+    const doc = new DOMParser().parseFromString(`<body>${out}</body>`, 'text/html');
+    const el = doc.querySelector(tag);
+    assert.equal(el.getAttribute('data-gjs-type'), 'text', `<${tag}> must be typed text`);
+  });
+});
+
+test('Feb 2026 Word-exported heading structure becomes editable', () => {
+  const input = '<h2 id="id-1e4424d1-4daa-46da-a052-92f91012e58a"><b id="ihgoz"><p id="i92ue" class="MsoNormal"><b id="iz5wc">Update from the <br id="iz6if">Municipal Library &amp; Archives</b></p></b></h2>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString(`<body>${out}</body>`, 'text/html');
+  const h2 = doc.querySelector('h2');
+  assert.equal(h2.getAttribute('data-gjs-type'), 'text', 'the <h2> itself must be typed text');
+});
+
+test('inline-in-td regression: standalone <b> in <td> still typed', () => {
+  const input = '<table><tr><td><b id="x">Hello</b></td></tr></table>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString(`<body>${out}</body>`, 'text/html');
+  const b = doc.querySelector('b');
+  assert.equal(b.getAttribute('data-gjs-type'), 'text', '<b> in <td> regression');
+});
