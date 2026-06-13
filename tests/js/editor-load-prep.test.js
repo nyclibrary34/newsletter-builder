@@ -60,3 +60,11 @@ test('empty or non-string input returned unchanged', () => {
   assert.equal(makeStandaloneInlineEditable(null), null);
   assert.equal(makeStandaloneInlineEditable(undefined), undefined);
 });
+
+test('standalone <b> inside <h2> gets data-gjs-type="text"', () => {
+  const input = '<h2><b id="ihgoz"><p><b id="iz5wc">Update from the Municipal Library</b></p></b></h2>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString(`<body>${out}</body>`, 'text/html');
+  const outerB = doc.querySelector('b#ihgoz');
+  assert.equal(outerB.getAttribute('data-gjs-type'), 'text', 'outer <b> direct child of <h2> must be typed text');
+});

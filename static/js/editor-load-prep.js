@@ -6,7 +6,7 @@
   }
 })(typeof self !== 'undefined' ? self : this, function () {
   var INLINE_TAGS = ['B', 'STRONG', 'I', 'EM', 'U', 'STRIKE'];
-  var LAYOUT_PARENT_TAGS = ['TD', 'TH', 'DIV', 'BODY', 'TABLE', 'TR', 'TBODY', 'THEAD', 'TFOOT', 'SECTION', 'ARTICLE'];
+  var LAYOUT_PARENT_TAGS = ['TD', 'TH', 'DIV', 'BODY', 'TABLE', 'TR', 'TBODY', 'THEAD', 'TFOOT', 'SECTION', 'ARTICLE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'BLOCKQUOTE'];
 
   function isStandaloneInline(el) {
     if (!el || !el.parentElement) return false;
