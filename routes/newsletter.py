@@ -64,7 +64,7 @@ def get_file_content(file_id):
         # Return content as plain text for the editor
         return Response(
             content,
-            mimetype='text/html',
+            mimetype='text/plain',
             headers={
                 'Cache-Control': 'no-cache, no-store, must-revalidate',
                 'Pragma': 'no-cache',

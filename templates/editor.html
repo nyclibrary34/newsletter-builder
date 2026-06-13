@@ -209,6 +209,9 @@ JavaScript APIs Used:
 <!-- HTML Processor: Client-side CSS inlining and ID cleanup (replaces juice server) -->
 <script src="{{ url_for('static', filename='js/html-processor.js') }}"></script>
 
+<!-- Editor Load Prep: marks standalone inline-formatting wrappers as text components -->
+<script src="{{ url_for('static', filename='js/editor-load-prep.js') }}"></script>
+
 <!-- ========================================================================
      GRAPESJS EDITOR INITIALIZATION AND CONFIGURATION
      ======================================================================== -->
@@ -495,13 +498,20 @@ JavaScript APIs Used:
     // They do NOT affect the exported HTML
     canvasCss: `
       /* Basic resets for email compatibility */
-      html, body { 
-        margin: 0 !important; 
-        padding: 0 !important; 
-        height: auto !important; 
-        min-height: 0 !important; 
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        height: auto !important;
+        min-height: 0 !important;
       }
-      
+
+      /* Match export pipeline typography defaults (html-processor.js) */
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 16px;
+        color: #111111;
+      }
+
       /* Table resets for email */
       table { 
         border-collapse: collapse; 
@@ -1075,6 +1085,38 @@ JavaScript APIs Used:
     }
   `);
   // ========================================================================
+  // CSS DEDUPLICATOR - Remove repeated rules from re-import cycles
+  // ========================================================================
+  function dedupeCssRules(css) {
+    const atBlocks = [];
+    const atBlockRegex = /@[^{]+\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g;
+    const flat = css.replace(atBlockRegex, function (match) {
+      atBlocks.push(match);
+      return '';
+    });
+
+    const seen = new Set();
+    const deduped = [];
+
+    function pushUnique(rule) {
+      const key = rule.replace(/\s+/g, ' ').trim();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        deduped.push(rule.trim());
+      }
+    }
+
+    const ruleRegex = /[^{}]+\{[^{}]*\}/g;
+    let match;
+    while ((match = ruleRegex.exec(flat)) !== null) {
+      pushUnique(match[0]);
+    }
+    atBlocks.forEach(pushUnique);
+
+    return deduped.join('\n');
+  }
+
+  // ========================================================================
   // CSS SANITIZER - Remove problematic styles for email compatibility
   // ========================================================================
   function sanitizeCssForEmail(css) {
@@ -1252,7 +1294,7 @@ JavaScript APIs Used:
         // --- Extract Content from Editor ---
         let html = editor.getHtml();                // Get HTML content from canvas
         const rawCss = editor.getCss();             // Get raw CSS styles from editor
-        const css = sanitizeCssForEmail(rawCss);    // Sanitize CSS for email compatibility
+        const css = dedupeCssRules(sanitizeCssForEmail(rawCss)); // Sanitize + dedupe accumulated rules
         
         // --- Ensure alignment styles are preserved BEFORE processing ---
         html = ensureAlignmentStyles(html);         // Add inline styles for logos/icons
@@ -1468,7 +1510,10 @@ JavaScript APIs Used:
               // IMPORTANT: Set both components AND styles to preserve everything
               // The order matters - set components first, then styles
               if (bodyHtml) {
-                editor.setComponents(bodyHtml);
+                var prepped = (window.NewsletterEditorLoadPrep && window.NewsletterEditorLoadPrep.makeStandaloneInlineEditable)
+                  ? window.NewsletterEditorLoadPrep.makeStandaloneInlineEditable(bodyHtml)
+                  : bodyHtml;
+                editor.setComponents(prepped);
               }
               
               if (styles && styles.trim()) {
@@ -1479,13 +1524,19 @@ JavaScript APIs Used:
               console.log('Content loaded successfully');
             } else {
               // Fallback: load raw HTML if parsing fails
-              editor.setComponents(data);
+              var preppedData = (window.NewsletterEditorLoadPrep && window.NewsletterEditorLoadPrep.makeStandaloneInlineEditable)
+                ? window.NewsletterEditorLoadPrep.makeStandaloneInlineEditable(data)
+                : data;
+              editor.setComponents(preppedData);
               console.warn('Loaded raw HTML as fallback');
             }
           } catch (e) {
             console.error('Failed to parse saved HTML:', e);
             // Last resort: just load the raw HTML
-            editor.setComponents(data);
+            var preppedData = (window.NewsletterEditorLoadPrep && window.NewsletterEditorLoadPrep.makeStandaloneInlineEditable)
+              ? window.NewsletterEditorLoadPrep.makeStandaloneInlineEditable(data)
+              : data;
+            editor.setComponents(preppedData);
           }
         })  // Load content into editor
         .catch((error) => {

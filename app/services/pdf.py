@@ -10,10 +10,14 @@ pagination breaks while preserving visual fidelity similar to the editor.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
+import mimetypes
 import os
+import re
 from io import BytesIO
 from typing import Any, Dict, Iterable, Optional, Tuple
+from urllib.parse import urlparse, parse_qs
 
 from PIL import Image
 import requests
@@ -36,6 +40,82 @@ except ImportError:
     Page = None
 
 
+# Realistic desktop Chrome UA. nyc.gov's WAF returns 403 to the default
+# HeadlessChrome user-agent, which silently breaks every image in the PDF.
+BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
+_SAFELINKS_RE = re.compile(
+    r'https://[a-z0-9.-]*safelinks\.protection\.outlook\.com/\?[^"\'\s>]+',
+    re.IGNORECASE,
+)
+
+_IMG_SRC_RE = re.compile(
+    r'(<img\b[^>]*?\bsrc=["\'])(https?://[^"\']+)(["\'])',
+    re.IGNORECASE,
+)
+
+MAX_EMBED_IMAGE_BYTES = 8 * 1024 * 1024
+
+
+def normalize_image_sources(html: str) -> str:
+    """Unwrap Outlook SafeLinks URLs and rewrite legacy nyc.gov hosts.
+
+    Exported newsletters that round-tripped through Outlook carry image srcs
+    wrapped by SafeLinks; those URLs fail in a clean browser session.
+    """
+    def _unwrap(match: "re.Match") -> str:
+        wrapped = match.group(0).replace("&amp;", "&")
+        query = parse_qs(urlparse(wrapped).query)
+        target = query.get("url", [None])[0]
+
+        # Only accept unwrapped URL if it starts with http:// or https://
+        if target and target.lower().startswith(("http://", "https://")):
+            return target
+        return match.group(0)
+
+    html = _SAFELINKS_RE.sub(_unwrap, html)
+    html = html.replace("https://www1.nyc.gov/", "https://www.nyc.gov/")
+    return html
+
+
+def embed_remote_images(html: str) -> str:
+    """Inline every remote <img> as a base64 data URI.
+
+    Headless renderers get blocked by WAFs (nyc.gov 403s HeadlessChrome),
+    so we fetch with a real-browser UA here and ship self-contained HTML.
+    Failures leave the original URL in place.
+    """
+    cache: Dict[str, Optional[str]] = {}
+
+    def _fetch(url: str) -> Optional[str]:
+        if url in cache:
+            return cache[url]
+        data_uri: Optional[str] = None
+        try:
+            resp = requests.get(url, headers={"User-Agent": BROWSER_UA}, timeout=10)
+            if resp.ok and resp.content and len(resp.content) <= MAX_EMBED_IMAGE_BYTES:
+                content_type = resp.headers.get("Content-Type", "").split(";")[0].strip()
+                if not content_type.startswith("image/"):
+                    content_type = mimetypes.guess_type(url)[0] or "image/png"
+                encoded = base64.b64encode(resp.content).decode("ascii")
+                data_uri = f"data:{content_type};base64,{encoded}"
+            else:
+                logging.warning("Image fetch for PDF embed not usable: %s", url)
+        except Exception as exc:
+            logging.warning("Failed to fetch image for PDF embed %s: %s", url, exc)
+        cache[url] = data_uri
+        return data_uri
+
+    def _replace(match: "re.Match") -> str:
+        data_uri = _fetch(match.group(2))
+        return f"{match.group(1)}{data_uri or match.group(2)}{match.group(3)}"
+
+    return _IMG_SRC_RE.sub(_replace, html)
+
+
 class PDFService:
     """Service responsible for rendering single-page PDF documents."""
 
@@ -48,7 +128,7 @@ class PDFService:
     MIN_VIEWPORT_WIDTH = 768
     MAX_VIEWPORT_WIDTH = 1600
     DEFAULT_VIEWPORT_HEIGHT = 1200
-    RENDER_DELAY_MS = 2000  # Increased for complex inline-styled HTML
+    RENDER_DELAY_MS = 250  # small settle buffer; image readiness is awaited explicitly
     BROWSERLESS_VIEWPORT_WIDTH = 880
     BROWSERLESS_DEVICE_SCALE_FACTOR = 2
 
@@ -133,6 +213,11 @@ class PDFService:
         # This ensures inline-styled HTML gets proper base styles
         prepared_html = self._inject_single_page_css(html_content)
 
+        # Normalize image URLs (unwrap SafeLinks, fix legacy www1.nyc.gov)
+        prepared_html = normalize_image_sources(prepared_html)
+        # Embed remote images as data URIs to bypass WAF blocks on HeadlessChrome UA
+        prepared_html = await asyncio.to_thread(embed_remote_images, prepared_html)
+
         # Use Browserless if token is available (required for Vercel, optional for local)
         screenshot: Optional[bytes] = None
         
@@ -166,6 +251,13 @@ class PDFService:
 
                     await page.set_content(prepared_html, wait_until="domcontentloaded")
                     await page.wait_for_load_state("networkidle", timeout=10000)
+                    try:
+                        await page.wait_for_function(
+                            "Array.from(document.images).every(img => img.complete)",
+                            timeout=5000,
+                        )
+                    except Exception:
+                        logging.warning("Timed out waiting for images to load; rendering anyway")
                     await page.wait_for_timeout(self.RENDER_DELAY_MS)
 
                     dimensions = await self._measure_page_dimensions(page)
@@ -227,7 +319,11 @@ class PDFService:
                 "height": self.DEFAULT_VIEWPORT_HEIGHT,
                 "deviceScaleFactor": self.BROWSERLESS_DEVICE_SCALE_FACTOR,
             },
-            "waitForTimeout": 2000,  # Extra render delay; supported top-level per Browserless v2 API
+            "waitForFunction": {
+                "fn": "() => Array.from(document.images).every(img => img.complete)",
+                "timeout": 5000,
+            },
+            "waitForTimeout": 250,
         }
 
         def _post_request() -> Optional[bytes]:
@@ -261,7 +357,7 @@ class PDFService:
             endpoint = f"wss://production-sfo.browserless.io?token={self.browserless_token}"
             try:
                 browser = await playwright.chromium.connect_over_cdp(endpoint)
-                context = browser.contexts[0] if browser.contexts else await browser.new_context()
+                context = await browser.new_context(user_agent=BROWSER_UA)
                 return browser, context, True
             except Exception as exc:
                 logging.warning(
@@ -270,7 +366,7 @@ class PDFService:
                 )
 
         browser = await playwright.chromium.launch(headless=True)
-        context = await browser.new_context(device_scale_factor=1)
+        context = await browser.new_context(device_scale_factor=1, user_agent=BROWSER_UA)
         return browser, context, False
 
     async def _measure_page_dimensions(self, page: Page) -> Dict[str, float]:

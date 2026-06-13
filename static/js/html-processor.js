@@ -770,6 +770,109 @@ function markEditableCells(doc) {
 }
 
 /**
+ * Default typography values for Outlook compatibility
+ */
+const DEFAULTS = {
+  'font-family': 'Arial, Helvetica, sans-serif',
+  'font-size': '16px',
+  'line-height': '1.65',
+  'color': '#111111'
+};
+
+/**
+ * Resolve inherit typography values to concrete ancestors or defaults
+ * Outlook's Word engine treats 'inherit' as invalid, causing fallback to Times New Roman
+ * @param {Document} doc
+ */
+function resolveInheritTypography(doc) {
+  if (!doc || !doc.body) {
+    return;
+  }
+
+  // Find all elements with inline styles
+  const elements = doc.body.querySelectorAll('[style]');
+  elements.forEach(element => {
+    const props = parseStyleAttribute(element.getAttribute('style'));
+    let hasChanges = false;
+
+    // Check each property for 'inherit' value
+    Object.keys(DEFAULTS).forEach(prop => {
+      const value = props.get(prop);
+      if (value && value.toLowerCase() === 'inherit') {
+        // Walk up ancestor chain to find concrete value
+        let resolved = null;
+        let ancestor = element.parentElement;
+
+        while (ancestor && ancestor !== doc.documentElement && !resolved) {
+          const ancestorProps = parseStyleAttribute(ancestor.getAttribute('style'));
+          const ancestorValue = (ancestorProps.get(prop) || '').trim();
+          if (ancestorValue && ancestorValue.toLowerCase() !== 'inherit') {
+            resolved = ancestorValue;
+          }
+          ancestor = ancestor.parentElement;
+        }
+
+        // Use resolved value or fall back to default
+        props.set(prop, resolved || DEFAULTS[prop]);
+        hasChanges = true;
+      }
+    });
+
+    // Update style attribute if anything changed
+    if (hasChanges) {
+      const styleValue = styleMapToString(props);
+      if (styleValue) {
+        element.setAttribute('style', styleValue);
+      } else {
+        element.removeAttribute('style');
+      }
+    }
+  });
+}
+
+/**
+ * Ensure block text elements carry an explicit inline font-family.
+ * Outlook ignores inheritance from the containing cell for these tags.
+ * @param {Document} doc
+ */
+function applyDefaultTextStyles(doc) {
+  if (!doc || !doc.body) {
+    return;
+  }
+  const textElements = doc.body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote');
+  textElements.forEach(element => {
+    const props = parseStyleAttribute(element.getAttribute('style'));
+    if (!props.has('font-family')) {
+      props.set('font-family', 'Arial, Helvetica, sans-serif');
+    }
+    const styleValue = styleMapToString(props);
+    if (styleValue) {
+      element.setAttribute('style', styleValue);
+    }
+  });
+}
+
+/**
+ * Append an Outlook-only conditional style so any element that slipped
+ * through inlining still renders Arial instead of Times New Roman.
+ * Intentionally NOT !important: inline (user-chosen) fonts must win.
+ * @param {Document} doc
+ */
+function ensureMsoFontFallback(doc) {
+  const head = doc.head;
+  if (!head || head.innerHTML.indexOf('mso-font-fallback') !== -1) {
+    return;
+  }
+  const comment = doc.createComment(
+    '[if mso]><style type="text/css" data-mso-font-fallback="true">' +
+    'body, table, td, p, h1, h2, h3, h4, h5, h6, li, a, span ' +
+    '{ font-family: Arial, Helvetica, sans-serif; }' +
+    '</style><![endif]'
+  );
+  head.appendChild(comment);
+}
+
+/**
  * Main processing function - match juice server behavior exactly
  * Only process styles that would actually be inlined by juice library
  * @param {string} htmlContent - Raw HTML content with <style> tags
@@ -835,7 +938,10 @@ function processHTML(htmlContent) {
   styleTags.forEach(styleTag => {
     styleTag.remove();
   });
-  
+
+  // Outlook-only font fallback (survives style-tag removal — it's a comment node)
+  ensureMsoFontFallback(doc);
+
   // Replace auto-generated IDs with UUIDs
   replaceIDs(doc);
   
@@ -846,6 +952,12 @@ function processHTML(htmlContent) {
   ensureBodyTypography(doc);
   applyDefaultCellStyles(doc);
   normalizeInlineStyles(doc);
+
+  // Resolve inherit typography values to concrete values for Outlook
+  resolveInheritTypography(doc);
+
+  // Add explicit inline font-family to text elements (Outlook fix)
+  applyDefaultTextStyles(doc);
 
   // Mark editable cells for GrapesJS re-import (NEW)
   markEditableCells(doc);
@@ -1395,7 +1507,10 @@ if (typeof module !== 'undefined' && module.exports) {
     processAndDownload,
     formatHTMLContent,
     generateUUID,
-    replaceIDs
+    replaceIDs,
+    resolveInheritTypography,
+    applyDefaultTextStyles,
+    ensureMsoFontFallback
   };
 } else {
   // Browser environment - attach to window

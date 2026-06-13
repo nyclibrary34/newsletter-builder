@@ -231,10 +231,25 @@ class LocalStorage(StorageInterface):
     
     def __init__(self, base_path: str = "static/files"):
         self.base_path = base_path
-        self.full_path = os.path.join(os.getcwd(), base_path)
+        self.full_path = os.path.abspath(os.path.join(os.getcwd(), base_path))
         
         # Ensure base directory exists
         os.makedirs(self.full_path, exist_ok=True)
+
+    def _resolve_path(self, file_id: str) -> str:
+        """Resolve a storage ID to a path that remains inside the storage root."""
+        decoded_id = unquote(file_id).strip()
+        if not decoded_id or '\x00' in decoded_id:
+            raise ValueError("Invalid file ID")
+
+        if os.path.isabs(decoded_id) or os.path.splitdrive(decoded_id)[0]:
+            raise ValueError("Invalid file ID")
+
+        candidate = os.path.abspath(os.path.join(self.full_path, decoded_id))
+        if os.path.commonpath([self.full_path, candidate]) != self.full_path:
+            raise ValueError("Invalid file ID")
+
+        return candidate
     
     def upload(self, file: IO, filename: str) -> Dict[str, Any]:
         """Upload file to local storage with date-based folder structure"""
@@ -281,7 +296,11 @@ class LocalStorage(StorageInterface):
     
     def download(self, file_id: str) -> bytes:
         """Download file content from local storage"""
-        file_path = os.path.join(self.full_path, file_id)
+        try:
+            file_path = self._resolve_path(file_id)
+        except ValueError:
+            raise FileNotFoundError(f"File not found: {file_id}") from None
+
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_id}")
         
@@ -292,7 +311,11 @@ class LocalStorage(StorageInterface):
         """Delete file from local storage"""
         try:
             for candidate in _build_storage_candidate_paths(file_id):
-                file_path = os.path.join(self.full_path, candidate)
+                try:
+                    file_path = self._resolve_path(candidate)
+                except ValueError:
+                    continue
+
                 if os.path.exists(file_path):
                     os.remove(file_path)
                     
@@ -311,7 +334,7 @@ class LocalStorage(StorageInterface):
     def save(self, file_id: str, content: bytes) -> bool:
         """Save/overwrite file content in local storage"""
         try:
-            file_path = os.path.join(self.full_path, file_id)
+            file_path = self._resolve_path(file_id)
             
             # Ensure directory exists
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -326,7 +349,7 @@ class LocalStorage(StorageInterface):
         """List files from local storage with prefix filter"""
         try:
             files = []
-            search_path = os.path.join(self.full_path, prefix)
+            search_path = self._resolve_path(prefix or ".")
             
             if not os.path.exists(search_path):
                 return files
