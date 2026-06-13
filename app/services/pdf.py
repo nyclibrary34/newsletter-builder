@@ -346,7 +346,7 @@ class PDFService:
             endpoint = f"wss://production-sfo.browserless.io?token={self.browserless_token}"
             try:
                 browser = await playwright.chromium.connect_over_cdp(endpoint)
-                context = browser.contexts[0] if browser.contexts else await browser.new_context()
+                context = await browser.new_context(user_agent=BROWSER_UA)
                 return browser, context, True
             except Exception as exc:
                 logging.warning(
@@ -355,7 +355,7 @@ class PDFService:
                 )
 
         browser = await playwright.chromium.launch(headless=True)
-        context = await browser.new_context(device_scale_factor=1)
+        context = await browser.new_context(device_scale_factor=1, user_agent=BROWSER_UA)
         return browser, context, False
 
     async def _measure_page_dimensions(self, page: Page) -> Dict[str, float]:
