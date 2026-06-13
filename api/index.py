@@ -3,7 +3,7 @@ Newsletter Builder - Vercel Entry Point
 Enhanced with proper configuration management and optional monitoring.
 """
 
-from flask import Flask
+from flask import Flask, request
 import cloudinary
 import os
 import sys
@@ -122,6 +122,17 @@ def create_app(config_name: Optional[str] = None) -> Flask:
     app.register_blueprint(main_bp)
     app.register_blueprint(newsletter_bp)
     app.register_blueprint(tools_bp, url_prefix='/tools')
+
+    # Long-lived cache for static vendor assets; exclude user newsletters
+    @app.after_request
+    def add_static_cache_headers(response):
+        if (
+            request.path.startswith("/static/")
+            and not request.path.startswith("/static/files/")
+            and response.status_code == 200
+        ):
+            response.headers["Cache-Control"] = "public, max-age=2592000"
+        return response
 
     # Security headers middleware
     @app.after_request
