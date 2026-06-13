@@ -52,6 +52,13 @@ _SAFELINKS_RE = re.compile(
     re.IGNORECASE,
 )
 
+_IMG_SRC_RE = re.compile(
+    r'(<img\b[^>]*?\bsrc=["\'])(https?://[^"\']+)(["\'])',
+    re.IGNORECASE,
+)
+
+MAX_EMBED_IMAGE_BYTES = 8 * 1024 * 1024
+
 
 def normalize_image_sources(html: str) -> str:
     """Unwrap Outlook SafeLinks URLs and rewrite legacy nyc.gov hosts.
@@ -72,6 +79,41 @@ def normalize_image_sources(html: str) -> str:
     html = _SAFELINKS_RE.sub(_unwrap, html)
     html = html.replace("https://www1.nyc.gov/", "https://www.nyc.gov/")
     return html
+
+
+def embed_remote_images(html: str) -> str:
+    """Inline every remote <img> as a base64 data URI.
+
+    Headless renderers get blocked by WAFs (nyc.gov 403s HeadlessChrome),
+    so we fetch with a real-browser UA here and ship self-contained HTML.
+    Failures leave the original URL in place.
+    """
+    cache: Dict[str, Optional[str]] = {}
+
+    def _fetch(url: str) -> Optional[str]:
+        if url in cache:
+            return cache[url]
+        data_uri: Optional[str] = None
+        try:
+            resp = requests.get(url, headers={"User-Agent": BROWSER_UA}, timeout=10)
+            if resp.ok and resp.content and len(resp.content) <= MAX_EMBED_IMAGE_BYTES:
+                content_type = resp.headers.get("Content-Type", "").split(";")[0].strip()
+                if not content_type.startswith("image/"):
+                    content_type = mimetypes.guess_type(url)[0] or "image/png"
+                encoded = base64.b64encode(resp.content).decode("ascii")
+                data_uri = f"data:{content_type};base64,{encoded}"
+            else:
+                logging.warning("Image fetch for PDF embed not usable: %s", url)
+        except Exception as exc:
+            logging.warning("Failed to fetch image for PDF embed %s: %s", url, exc)
+        cache[url] = data_uri
+        return data_uri
+
+    def _replace(match: "re.Match") -> str:
+        data_uri = _fetch(match.group(2))
+        return f"{match.group(1)}{data_uri or match.group(2)}{match.group(3)}"
+
+    return _IMG_SRC_RE.sub(_replace, html)
 
 
 class PDFService:
@@ -170,6 +212,11 @@ class PDFService:
         # CRITICAL: Inject CSS BEFORE sending to any rendering engine
         # This ensures inline-styled HTML gets proper base styles
         prepared_html = self._inject_single_page_css(html_content)
+
+        # Normalize image URLs (unwrap SafeLinks, fix legacy www1.nyc.gov)
+        prepared_html = normalize_image_sources(prepared_html)
+        # Embed remote images as data URIs to bypass WAF blocks on HeadlessChrome UA
+        prepared_html = await asyncio.to_thread(embed_remote_images, prepared_html)
 
         # Use Browserless if token is available (required for Vercel, optional for local)
         screenshot: Optional[bytes] = None

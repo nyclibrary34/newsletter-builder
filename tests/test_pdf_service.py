@@ -1,7 +1,7 @@
 """Unit tests for image URL normalization and embedding in the PDF service."""
 import pytest
 
-from app.services.pdf import normalize_image_sources
+from app.services.pdf import normalize_image_sources, embed_remote_images
 
 
 class TestNormalizeImageSources:
@@ -40,3 +40,57 @@ class TestNormalizeImageSources:
         # The original SafeLinks URL should remain unchanged
         assert 'safelinks' in out
         assert 'javascript:alert(1)' not in out
+
+
+class _FakeResponse:
+    def __init__(self, ok=True, content=b"\x89PNGfake", content_type="image/png"):
+        self.ok = ok
+        self.content = content
+        self.headers = {"Content-Type": content_type}
+
+
+class TestEmbedRemoteImages:
+    def test_embeds_image_as_data_uri(self, monkeypatch):
+        import app.services.pdf as pdf_mod
+        monkeypatch.setattr(
+            pdf_mod.requests, "get",
+            lambda url, headers=None, timeout=None: _FakeResponse(),
+        )
+        out = embed_remote_images('<img src="https://www.nyc.gov/a.png">')
+        assert 'src="data:image/png;base64,' in out
+
+    def test_keeps_original_src_on_failure(self, monkeypatch):
+        import app.services.pdf as pdf_mod
+
+        def _boom(url, headers=None, timeout=None):
+            raise pdf_mod.requests.RequestException("boom")
+
+        monkeypatch.setattr(pdf_mod.requests, "get", _boom)
+        html = '<img src="https://www.nyc.gov/a.png">'
+        assert embed_remote_images(html) == html
+
+    def test_fetches_each_unique_url_once(self, monkeypatch):
+        import app.services.pdf as pdf_mod
+        calls = []
+
+        def _get(url, headers=None, timeout=None):
+            calls.append(url)
+            return _FakeResponse()
+
+        monkeypatch.setattr(pdf_mod.requests, "get", _get)
+        html = '<img src="https://x.test/a.png"><img src="https://x.test/a.png">'
+        embed_remote_images(html)
+        assert len(calls) == 1
+
+    def test_sends_browser_user_agent(self, monkeypatch):
+        import app.services.pdf as pdf_mod
+        seen = {}
+
+        def _get(url, headers=None, timeout=None):
+            seen.update(headers or {})
+            return _FakeResponse()
+
+        monkeypatch.setattr(pdf_mod.requests, "get", _get)
+        embed_remote_images('<img src="https://x.test/a.png">')
+        assert "HeadlessChrome" not in seen.get("User-Agent", "")
+        assert seen.get("User-Agent", "").startswith("Mozilla/5.0")
