@@ -770,6 +770,67 @@ function markEditableCells(doc) {
 }
 
 /**
+ * Default typography values for Outlook compatibility
+ */
+const DEFAULTS = {
+  'font-family': 'Arial, Helvetica, sans-serif',
+  'font-size': '16px',
+  'line-height': '1.65',
+  'color': '#111111'
+};
+
+/**
+ * Resolve inherit typography values to concrete ancestors or defaults
+ * Outlook's Word engine treats 'inherit' as invalid, causing fallback to Times New Roman
+ * @param {Document} doc
+ */
+function resolveInheritTypography(doc) {
+  if (!doc || !doc.body) {
+    return;
+  }
+
+  // Find all elements with inline styles
+  const elements = doc.body.querySelectorAll('[style]');
+  elements.forEach(element => {
+    const props = parseStyleAttribute(element.getAttribute('style'));
+    let hasChanges = false;
+
+    // Check each property for 'inherit' value
+    Object.keys(DEFAULTS).forEach(prop => {
+      const value = props.get(prop);
+      if (value && value.toLowerCase() === 'inherit') {
+        // Walk up ancestor chain to find concrete value
+        let resolved = null;
+        let ancestor = element.parentElement;
+
+        while (ancestor && ancestor !== doc.documentElement && !resolved) {
+          const ancestorProps = parseStyleAttribute(ancestor.getAttribute('style'));
+          const ancestorValue = (ancestorProps.get(prop) || '').trim();
+          if (ancestorValue && ancestorValue.toLowerCase() !== 'inherit') {
+            resolved = ancestorValue;
+          }
+          ancestor = ancestor.parentElement;
+        }
+
+        // Use resolved value or fall back to default
+        props.set(prop, resolved || DEFAULTS[prop]);
+        hasChanges = true;
+      }
+    });
+
+    // Update style attribute if anything changed
+    if (hasChanges) {
+      const styleValue = styleMapToString(props);
+      if (styleValue) {
+        element.setAttribute('style', styleValue);
+      } else {
+        element.removeAttribute('style');
+      }
+    }
+  });
+}
+
+/**
  * Main processing function - match juice server behavior exactly
  * Only process styles that would actually be inlined by juice library
  * @param {string} htmlContent - Raw HTML content with <style> tags
@@ -846,6 +907,9 @@ function processHTML(htmlContent) {
   ensureBodyTypography(doc);
   applyDefaultCellStyles(doc);
   normalizeInlineStyles(doc);
+
+  // Resolve inherit typography values to concrete values for Outlook
+  resolveInheritTypography(doc);
 
   // Mark editable cells for GrapesJS re-import (NEW)
   markEditableCells(doc);
@@ -1395,7 +1459,8 @@ if (typeof module !== 'undefined' && module.exports) {
     processAndDownload,
     formatHTMLContent,
     generateUUID,
-    replaceIDs
+    replaceIDs,
+    resolveInheritTypography
   };
 } else {
   // Browser environment - attach to window
