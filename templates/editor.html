@@ -495,13 +495,20 @@ JavaScript APIs Used:
     // They do NOT affect the exported HTML
     canvasCss: `
       /* Basic resets for email compatibility */
-      html, body { 
-        margin: 0 !important; 
-        padding: 0 !important; 
-        height: auto !important; 
-        min-height: 0 !important; 
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        height: auto !important;
+        min-height: 0 !important;
       }
-      
+
+      /* Match export pipeline typography defaults (html-processor.js) */
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 16px;
+        color: #111111;
+      }
+
       /* Table resets for email */
       table { 
         border-collapse: collapse; 
@@ -1075,6 +1082,38 @@ JavaScript APIs Used:
     }
   `);
   // ========================================================================
+  // CSS DEDUPLICATOR - Remove repeated rules from re-import cycles
+  // ========================================================================
+  function dedupeCssRules(css) {
+    const atBlocks = [];
+    const atBlockRegex = /@[^{]+\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g;
+    const flat = css.replace(atBlockRegex, function (match) {
+      atBlocks.push(match);
+      return '';
+    });
+
+    const seen = new Set();
+    const deduped = [];
+
+    function pushUnique(rule) {
+      const key = rule.replace(/\s+/g, ' ').trim();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        deduped.push(rule.trim());
+      }
+    }
+
+    const ruleRegex = /[^{}]+\{[^{}]*\}/g;
+    let match;
+    while ((match = ruleRegex.exec(flat)) !== null) {
+      pushUnique(match[0]);
+    }
+    atBlocks.forEach(pushUnique);
+
+    return deduped.join('\n');
+  }
+
+  // ========================================================================
   // CSS SANITIZER - Remove problematic styles for email compatibility
   // ========================================================================
   function sanitizeCssForEmail(css) {
@@ -1252,7 +1291,7 @@ JavaScript APIs Used:
         // --- Extract Content from Editor ---
         let html = editor.getHtml();                // Get HTML content from canvas
         const rawCss = editor.getCss();             // Get raw CSS styles from editor
-        const css = sanitizeCssForEmail(rawCss);    // Sanitize CSS for email compatibility
+        const css = dedupeCssRules(sanitizeCssForEmail(rawCss)); // Sanitize + dedupe accumulated rules
         
         // --- Ensure alignment styles are preserved BEFORE processing ---
         html = ensureAlignmentStyles(html);         // Add inline styles for logos/icons
