@@ -319,9 +319,11 @@ class PDFService:
                 "height": self.DEFAULT_VIEWPORT_HEIGHT,
                 "deviceScaleFactor": self.BROWSERLESS_DEVICE_SCALE_FACTOR,
             },
-            "waitForFunction": "Array.from(document.images).every(img => img.complete)",
-            "waitForFunctionTimeout": 5000,
-            "waitForTimeout": 250,  # small settle buffer; image readiness is awaited explicitly
+            "waitForFunction": {
+                "fn": "() => Array.from(document.images).every(img => img.complete)",
+                "timeout": 5000,
+            },
+            "waitForTimeout": 250,
         }
 
         def _post_request() -> Optional[bytes]:
