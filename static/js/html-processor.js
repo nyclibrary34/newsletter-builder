@@ -831,6 +831,28 @@ function resolveInheritTypography(doc) {
 }
 
 /**
+ * Ensure block text elements carry an explicit inline font-family.
+ * Outlook ignores inheritance from the containing cell for these tags.
+ * @param {Document} doc
+ */
+function applyDefaultTextStyles(doc) {
+  if (!doc || !doc.body) {
+    return;
+  }
+  const textElements = doc.body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote');
+  textElements.forEach(element => {
+    const props = parseStyleAttribute(element.getAttribute('style'));
+    if (!props.has('font-family')) {
+      props.set('font-family', 'Arial, Helvetica, sans-serif');
+    }
+    const styleValue = styleMapToString(props);
+    if (styleValue) {
+      element.setAttribute('style', styleValue);
+    }
+  });
+}
+
+/**
  * Main processing function - match juice server behavior exactly
  * Only process styles that would actually be inlined by juice library
  * @param {string} htmlContent - Raw HTML content with <style> tags
@@ -910,6 +932,9 @@ function processHTML(htmlContent) {
 
   // Resolve inherit typography values to concrete values for Outlook
   resolveInheritTypography(doc);
+
+  // Add explicit inline font-family to text elements (Outlook fix)
+  applyDefaultTextStyles(doc);
 
   // Mark editable cells for GrapesJS re-import (NEW)
   markEditableCells(doc);
@@ -1460,7 +1485,8 @@ if (typeof module !== 'undefined' && module.exports) {
     formatHTMLContent,
     generateUUID,
     replaceIDs,
-    resolveInheritTypography
+    resolveInheritTypography,
+    applyDefaultTextStyles
   };
 } else {
   // Browser environment - attach to window

@@ -90,3 +90,50 @@ test('line-height:inherit without styled ancestor falls back to 1.65', () => {
   assert(!out.includes('line-height: inherit'));
   assert(out.includes('line-height: 1.65'), 'fallback line-height should be 1.65');
 });
+
+test('p and h3 without font-family get explicit Arial inline', () => {
+  const out = processor.processHTML(wrap(
+    '<table><tr><td><h3 style="margin:0;">Title</h3>' +
+    '<p style="margin:0;">Body text</p></td></tr></table>'
+  ));
+  const pMatch = out.match(/<p[^>]*style="([^"]*)"/i);
+  const hMatch = out.match(/<h3[^>]*style="([^"]*)"/i);
+  assert.ok(pMatch && /font-family/i.test(pMatch[1]), 'p needs inline font-family');
+  assert.ok(hMatch && /font-family/i.test(hMatch[1]), 'h3 needs inline font-family');
+});
+
+test('li without font-family gets explicit Arial inline', () => {
+  const out = processor.processHTML(wrap(
+    '<ul><li style="margin:0;">List item</li></ul>'
+  ));
+  const liMatch = out.match(/<li[^>]*style="([^"]*)"/i);
+  assert.ok(liMatch && /font-family/i.test(liMatch[1]), 'li needs inline font-family');
+});
+
+test('blockquote without font-family gets explicit Arial inline', () => {
+  const out = processor.processHTML(wrap(
+    '<blockquote style="margin:0;">Quote text</blockquote>'
+  ));
+  const bqMatch = out.match(/<blockquote[^>]*style="([^"]*)"/i);
+  assert.ok(bqMatch && /font-family/i.test(bqMatch[1]), 'blockquote needs inline font-family');
+});
+
+test('text elements with existing font-family not overwritten', () => {
+  const out = processor.processHTML(wrap(
+    '<p style="font-family:Georgia;">Text with Georgia</p>'
+  ));
+  const pMatch = out.match(/<p[^>]*style="([^"]*)"/i);
+  assert.ok(pMatch, 'p tag should have style attribute');
+  const styleContent = pMatch[1];
+  assert(styleContent.includes('Georgia'), 'p style should preserve Georgia');
+  assert(!styleContent.includes('Arial'), 'p style should not add Arial');
+});
+
+test('p with font-family in complex style preserves other properties', () => {
+  const out = processor.processHTML(wrap(
+    '<p style="color:red;margin:0;">Red text</p>'
+  ));
+  const pMatch = out.match(/<p[^>]*style="([^"]*)"/i);
+  assert.ok(pMatch && /font-family/i.test(pMatch[1]), 'p should have font-family');
+  assert.ok(pMatch && /color/i.test(pMatch[1]), 'should preserve color property');
+});
