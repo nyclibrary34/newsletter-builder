@@ -4,7 +4,6 @@ from io import BytesIO
 import os
 import json
 import asyncio
-import tempfile
 
 from app.services.pdf import PDFService
 
@@ -191,22 +190,12 @@ def convert_html_to_pdf():
             )
         )
 
-        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_pdf:
-            temp_pdf.write(pdf_bytes)
-            temp_pdf_path = temp_pdf.name
-
-        try:
-            return send_file(
-                temp_pdf_path,
-                as_attachment=True,
-                download_name=f"{os.path.splitext(html_file.filename)[0]}.pdf",
-                mimetype='application/pdf'
-            )
-        finally:
-            try:
-                os.unlink(temp_pdf_path)
-            except:
-                pass
+        return send_file(
+            BytesIO(pdf_bytes),
+            as_attachment=True,
+            download_name=f"{os.path.splitext(html_file.filename)[0]}.pdf",
+            mimetype='application/pdf'
+        )
 
     except Exception as e:
         logging.error(f"PDF conversion error: {str(e)}")
