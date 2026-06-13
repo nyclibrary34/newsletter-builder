@@ -68,3 +68,11 @@ test('standalone <b> inside <h2> gets data-gjs-type="text"', () => {
   const outerB = doc.querySelector('b#ihgoz');
   assert.equal(outerB.getAttribute('data-gjs-type'), 'text', 'outer <b> direct child of <h2> must be typed text');
 });
+
+test('<h2> without data-gjs-type gets data-gjs-type="text"', () => {
+  const input = '<h2><b id="ihgoz"><p><b id="iz5wc">Update from the Municipal Library</b></p></b></h2>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString(`<body>${out}</body>`, 'text/html');
+  const h2 = doc.querySelector('h2');
+  assert.equal(h2.getAttribute('data-gjs-type'), 'text', '<h2> heading must be typed text');
+});
