@@ -102,6 +102,7 @@ test('Feb 2026 Word-exported heading structure becomes editable', () => {
   const doc = new DOMParser().parseFromString(`<body>${out}</body>`, 'text/html');
   const h2 = doc.querySelector('h2');
   assert.equal(h2.getAttribute('data-gjs-type'), 'text', 'the <h2> itself must be typed text');
+  assert.equal(doc.querySelector('h2 p'), null, '<p> block must be unwrapped from inside <h2>');
 });
 
 test('inline-in-td regression: standalone <b> in <td> still typed', () => {

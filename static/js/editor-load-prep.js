@@ -15,6 +15,21 @@
     return LAYOUT_PARENT_TAGS.indexOf(el.parentElement.tagName) !== -1;
   }
 
+  function flattenBlocksInHeadings(body) {
+    var headingSel = HEADING_TAGS.map(function (t) { return t.toLowerCase(); }).join(',');
+    var blockSel = 'p,div,blockquote,pre';
+    var headings = body.querySelectorAll(headingSel);
+    headings.forEach(function (h) {
+      var blocks = h.querySelectorAll(blockSel);
+      Array.from(blocks).reverse().forEach(function (block) {
+        var parent = block.parentNode;
+        if (!parent) return;
+        while (block.firstChild) parent.insertBefore(block.firstChild, block);
+        parent.removeChild(block);
+      });
+    });
+  }
+
   function typeHeadingsAsText(body) {
     var selector = HEADING_TAGS.map(function (t) { return t.toLowerCase(); }).join(',');
     var nodes = body.querySelectorAll(selector);
@@ -40,6 +55,7 @@
       return htmlString;
     }
     var doc = new DOMParser().parseFromString('<body>' + htmlString + '</body>', 'text/html');
+    flattenBlocksInHeadings(doc.body);
     typeHeadingsAsText(doc.body);
     typeStandaloneInlines(doc.body);
     return doc.body.innerHTML;
