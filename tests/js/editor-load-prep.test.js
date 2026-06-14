@@ -112,3 +112,34 @@ test('inline-in-td regression: standalone <b> in <td> still typed', () => {
   const b = doc.querySelector('b');
   assert.equal(b.getAttribute('data-gjs-type'), 'text', '<b> in <td> regression');
 });
+
+test('paragraph with links and strong becomes a single editable text block', () => {
+  const input =
+    '<p id="p1" class="paragraph">Happy ' +
+    '<strong draggable="true" id="s1">National Library Week</strong> visit our ' +
+    '<a draggable="true" href="https://example.com" id="a1">research platform</a>.</p>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  const p = doc.querySelector('#p1');
+  assert.equal(p.getAttribute('data-gjs-type'), 'text', 'paragraph must be a text block');
+
+  const strong = doc.querySelector('#s1');
+  const anchor = doc.querySelector('#a1');
+  assert.equal(strong.hasAttribute('draggable'), false, 'draggable stripped from <strong>');
+  assert.equal(anchor.hasAttribute('draggable'), false, 'draggable stripped from <a>');
+  // ids preserved for style hooks
+  assert.equal(anchor.getAttribute('href'), 'https://example.com');
+});
+
+test('stale data-gjs-type="default" on inline children is stripped', () => {
+  const input =
+    '<p id="p2"><b data-gjs-type="default" draggable="true" id="b1">' +
+    '<b data-gjs-type="default" id="b2">Update from the</b></b></p>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  assert.equal(doc.querySelector('#p2').getAttribute('data-gjs-type'), 'text');
+  assert.equal(doc.querySelector('#b1').hasAttribute('data-gjs-type'), false);
+  assert.equal(doc.querySelector('#b2').hasAttribute('data-gjs-type'), false);
+});
