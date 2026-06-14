@@ -17,6 +17,7 @@
   function isStandaloneInline(el) {
     if (!el || !el.parentElement) return false;
     if (INLINE_TAGS.indexOf(el.tagName) === -1) return false;
+    if (closestTextBlock(el.parentElement)) return false;
     return LAYOUT_PARENT_TAGS.indexOf(el.parentElement.tagName) !== -1;
   }
 

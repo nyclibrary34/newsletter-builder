@@ -10,12 +10,14 @@ global.Node = dom.window.Node;
 
 const { makeStandaloneInlineEditable } = require('../../static/js/editor-load-prep.js');
 
-test('standalone <b> inside <td> gets data-gjs-type="text"', () => {
+test('standalone <b> inside <td> text block is not double-typed', () => {
   const input = '<table><tr><td><b id="ihgoz"><b id="iz5wc">Update from the<br>Municipal Library</b></b></td></tr></table>';
   const out = makeStandaloneInlineEditable(input);
   const doc = new DOMParser().parseFromString(`<body>${out}</body>`, 'text/html');
+  const td = doc.querySelector('td');
   const outerB = doc.querySelector('b#ihgoz');
-  assert.equal(outerB.getAttribute('data-gjs-type'), 'text', 'outer standalone <b> must be typed text');
+  assert.equal(td.getAttribute('data-gjs-type'), 'text', '<td> is the text block');
+  assert.equal(outerB.hasAttribute('data-gjs-type'), false, 'inner <b> not double-typed when parent is text block');
 });
 
 test('nested <b> inside <p> is NOT re-typed', () => {
@@ -26,21 +28,24 @@ test('nested <b> inside <p> is NOT re-typed', () => {
   assert.equal(nestedB.getAttribute('data-gjs-type'), null, 'nested <b> inside text container must not be typed');
 });
 
-test('all six inline tags handled when standalone in <td>', () => {
+test('all six inline tags in <td> text block not double-typed', () => {
   const tags = ['b', 'strong', 'i', 'em', 'u', 'strike'];
   tags.forEach((tag) => {
-    const input = `<table><tr><td><${tag} id="x">Hello</${tag}></td></tr></table>`;
+    const input = `<table><tr><td id="tdx"><${tag} id="x">Hello</${tag}></td></tr></table>`;
     const out = makeStandaloneInlineEditable(input);
     const doc = new DOMParser().parseFromString(`<body>${out}</body>`, 'text/html');
+    const td = doc.querySelector('td');
     const el = doc.querySelector(tag);
-    assert.equal(el.getAttribute('data-gjs-type'), 'text', `<${tag}> must be typed text`);
+    assert.equal(td.getAttribute('data-gjs-type'), 'text', `<td> is the text block`);
+    assert.equal(el.hasAttribute('data-gjs-type'), false, `<${tag}> not double-typed inside text block`);
   });
 });
 
 test('preserves existing id and class on retyped element', () => {
-  const input = '<div><b id="ihgoz" class="title">Hi</b></div>';
+  // Use a standalone <b> directly in body (not in a text block parent)
+  const input = '<body><b id="ihgoz" class="title">Hi</b></body>';
   const out = makeStandaloneInlineEditable(input);
-  const doc = new DOMParser().parseFromString(`<body>${out}</body>`, 'text/html');
+  const doc = new DOMParser().parseFromString(`${out}`, 'text/html');
   const el = doc.querySelector('b');
   assert.equal(el.getAttribute('id'), 'ihgoz');
   assert.equal(el.getAttribute('class'), 'title');
@@ -61,12 +66,14 @@ test('empty or non-string input returned unchanged', () => {
   assert.equal(makeStandaloneInlineEditable(undefined), undefined);
 });
 
-test('standalone <b> inside <h2> gets data-gjs-type="text"', () => {
+test('standalone <b> inside <h2> text block not double-typed', () => {
   const input = '<h2><b id="ihgoz"><p><b id="iz5wc">Update from the Municipal Library</b></p></b></h2>';
   const out = makeStandaloneInlineEditable(input);
   const doc = new DOMParser().parseFromString(`<body>${out}</body>`, 'text/html');
+  const h2 = doc.querySelector('h2');
   const outerB = doc.querySelector('b#ihgoz');
-  assert.equal(outerB.getAttribute('data-gjs-type'), 'text', 'outer <b> direct child of <h2> must be typed text');
+  assert.equal(h2.getAttribute('data-gjs-type'), 'text', '<h2> is the text block');
+  assert.equal(outerB.hasAttribute('data-gjs-type'), false, 'outer <b> child of <h2> text block not double-typed');
 });
 
 test('<h2> without data-gjs-type gets data-gjs-type="text"', () => {
@@ -105,12 +112,23 @@ test('Feb 2026 Word-exported heading structure becomes editable', () => {
   assert.equal(doc.querySelector('h2 p'), null, '<p> block must be unwrapped from inside <h2>');
 });
 
-test('inline-in-td regression: standalone <b> in <td> still typed', () => {
-  const input = '<table><tr><td><b id="x">Hello</b></td></tr></table>';
+test('standalone inline inside a typed text block is not re-typed', () => {
+  // <td> holds only inline content + text -> becomes a text block;
+  // the inner <b> must NOT get its own data-gjs-type (parent owns the RTE).
+  const input = '<table><tr><td id="cell">Note: <b id="bld">important</b> item</td></tr></table>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  assert.equal(doc.querySelector('#cell').getAttribute('data-gjs-type'), 'text', 'cell is a text block');
+  assert.equal(doc.querySelector('#bld').hasAttribute('data-gjs-type'), false, 'inner <b> not re-typed');
+});
+
+test('inline-in-td: <td> becomes text block, inner <b> not double-typed', () => {
+  const input = '<table><tr><td id="tdx"><b id="x">Hello</b></td></tr></table>';
   const out = makeStandaloneInlineEditable(input);
   const doc = new DOMParser().parseFromString(`<body>${out}</body>`, 'text/html');
-  const b = doc.querySelector('b');
-  assert.equal(b.getAttribute('data-gjs-type'), 'text', '<b> in <td> regression');
+  assert.equal(doc.querySelector('#tdx').getAttribute('data-gjs-type'), 'text', '<td> is the text block');
+  assert.equal(doc.querySelector('#x').hasAttribute('data-gjs-type'), false, '<b> inside typed <td> must not be re-typed');
 });
 
 test('paragraph with links and strong becomes a single editable text block', () => {
