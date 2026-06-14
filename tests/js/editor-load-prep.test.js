@@ -161,3 +161,38 @@ test('stale data-gjs-type="default" on inline children is stripped', () => {
   assert.equal(doc.querySelector('#b1').hasAttribute('data-gjs-type'), false);
   assert.equal(doc.querySelector('#b2').hasAttribute('data-gjs-type'), false);
 });
+
+test('title heading with draggable <br> is editable and br is cleaned', () => {
+  const input =
+    '<td id="hcell"><h1 id="h1">Municipal Library Notes' +
+    '<br draggable="true" id="br1"> April 2026</h1></td>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  assert.equal(doc.querySelector('#h1').getAttribute('data-gjs-type'), 'text');
+  assert.equal(doc.querySelector('#br1').hasAttribute('draggable'), false);
+});
+
+test('Word-export h2>p>b>b with default-typed children flattens into one editable heading', () => {
+  const input =
+    '<h2 id="h2"><p class="MsoNormal" data-gjs-type="text" draggable="true" id="p">' +
+    '<b data-gjs-type="default" draggable="true" id="b1">' +
+    '<b data-gjs-type="default" id="b2">Update from the' +
+    '<br data-gjs-type="default" id="br">Municipal Library</b></b></p></h2>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  const h2 = doc.querySelector('#h2');
+  assert.equal(h2.getAttribute('data-gjs-type'), 'text', 'h2 is the editable block');
+  assert.equal(doc.querySelector('#p'), null, 'inner <p> unwrapped out of the heading');
+  assert.equal(doc.querySelector('#b1').hasAttribute('data-gjs-type'), false);
+  assert.equal(doc.querySelector('#b2').hasAttribute('data-gjs-type'), false);
+  assert.equal(doc.querySelector('#br').hasAttribute('draggable'), false);
+  assert.match(h2.textContent, /Update from the/);
+});
+
+test('empty spacer paragraph does not throw and becomes a (harmless) text block', () => {
+  const out = makeStandaloneInlineEditable('<p id="sp" class="paragraph"></p>');
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+  assert.equal(doc.querySelector('#sp').getAttribute('data-gjs-type'), 'text');
+});
