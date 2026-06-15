@@ -43,25 +43,25 @@ JavaScript APIs Used:
 <!-- GrapesJS Core Styles: Main editor interface styling -->
 <link
   rel="stylesheet"
-  href="{{ url_for('static', filename='stylesheets/grapes.min.css') }}"
+  href="{{ versioned_static('stylesheets/grapes.min.css') }}"
 />
 
 <!-- Material Design Styles: UI component styling -->
 <link
   rel="stylesheet"
-  href="{{ url_for('static', filename='stylesheets/material.css') }}"
+  href="{{ versioned_static('stylesheets/material.css') }}"
 />
 
 <!-- Tooltip Styles: Hover tooltips for editor controls -->
 <link
   rel="stylesheet"
-  href="{{ url_for('static', filename='stylesheets/tooltip.css') }}"
+  href="{{ versioned_static('stylesheets/tooltip.css') }}"
 />
 
 <!-- Demo Styles: Additional styling for demo components -->
 <link
   rel="stylesheet"
-  href="{{ url_for('static', filename='stylesheets/demos.css') }}"
+  href="{{ versioned_static('stylesheets/demos.css') }}"
 />
 
 <!-- ========================================================================
@@ -198,19 +198,19 @@ JavaScript APIs Used:
      ======================================================================== -->
 
 <!-- GrapesJS Core Library: Main visual page builder framework -->
-<script src="{{ url_for('static', filename='js/grapes.min.js') }}"></script>
+<script src="{{ versioned_static('js/grapes.min.js') }}"></script>
 
 <!-- CKEditor Plugin: Rich text editing integration for GrapesJS text components -->
-<script src="{{ url_for('static', filename='js/grapesjs-plugin-ckeditor/index.js') }}"></script>
+<script src="{{ versioned_static('js/grapesjs-plugin-ckeditor/index.js') }}"></script>
 
 <!-- Newsletter Preset: Pre-configured components and styles for email templates -->
-<script src="{{ url_for('static', filename='js/grapesjs-preset-newsletter.min.js') }}"></script>
+<script src="{{ versioned_static('js/grapesjs-preset-newsletter.min.js') }}"></script>
 
 <!-- HTML Processor: Client-side CSS inlining and ID cleanup (replaces juice server) -->
-<script src="{{ url_for('static', filename='js/html-processor.js') }}"></script>
+<script src="{{ versioned_static('js/html-processor.js') }}"></script>
 
 <!-- Editor Load Prep: marks standalone inline-formatting wrappers as text components -->
-<script src="{{ url_for('static', filename='js/editor-load-prep.js') }}"></script>
+<script src="{{ versioned_static('js/editor-load-prep.js') }}"></script>
 
 <!-- ========================================================================
      GRAPESJS EDITOR INITIALIZATION AND CONFIGURATION

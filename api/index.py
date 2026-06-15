@@ -3,7 +3,7 @@ Newsletter Builder - Vercel Entry Point
 Enhanced with proper configuration management and optional monitoring.
 """
 
-from flask import Flask, request
+from flask import Flask, request, url_for
 import cloudinary
 import os
 import sys
@@ -23,6 +23,11 @@ from routes.newsletter import newsletter_bp
 from routes.tools import tools_bp
 
 compress = Compress()
+
+EDITOR_RUNTIME_ASSETS = {
+    "/static/js/editor-load-prep.js",
+    "/static/js/html-processor.js",
+}
 
 
 def init_sentry(app: Flask) -> None:
@@ -123,10 +128,27 @@ def create_app(config_name: Optional[str] = None) -> Flask:
     app.register_blueprint(newsletter_bp)
     app.register_blueprint(tools_bp, url_prefix='/tools')
 
-    # Long-lived cache for static vendor assets; exclude user newsletters
+    @app.context_processor
+    def inject_static_asset_helpers():
+        def versioned_static(filename: str) -> str:
+            asset_path = os.path.join(app.static_folder, filename.replace("/", os.sep))
+            try:
+                version = str(int(os.path.getmtime(asset_path)))
+            except OSError:
+                version = str(int(datetime.utcnow().timestamp()))
+            return url_for("static", filename=filename, v=version)
+
+        return {"versioned_static": versioned_static}
+
+    # Long-lived cache for static vendor assets; exclude user newsletters and
+    # mutable editor runtime scripts that must update immediately after deploys.
     @app.after_request
     def add_static_cache_headers(response):
-        if (
+        if request.path in EDITOR_RUNTIME_ASSETS and response.status_code == 200:
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        elif (
             request.path.startswith("/static/")
             and not request.path.startswith("/static/files/")
             and response.status_code == 200

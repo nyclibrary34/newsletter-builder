@@ -267,6 +267,49 @@ test('empty spacer paragraph does not throw and becomes a (harmless) text block'
   assert.equal(doc.querySelector('#sp').getAttribute('data-gjs-type'), 'text');
 });
 
+test('malformed image-caption article table is flattened into editable flow content', () => {
+  const input =
+    '<table class="image-caption-block" id="bad-caption">' +
+    '<tbody><tr>' +
+    '<td id="empty-a"></td>' +
+    '<td id="empty-b" style="vertical-align: top"></td>' +
+    '<td id="real-content" align="center">' +
+    '<img id="photo" src="https://example.test/photo.jpg" width="600" style="display:block;width:100%;max-width:600px">' +
+    '<table id="empty-nested" class="image-caption-block"><tbody><tr><td></td></tr></tbody></table>' +
+    '<p id="body" class="paragraph">By Lauren Gilbert, Director of the Municipal Library. Until 1881, when the Department of Street Cleaning was established, snow removal in New York City fell to the police department.</p>' +
+    '</td>' +
+    '</tr></tbody>' +
+    '</table>';
+
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  assert.equal(doc.querySelector('#bad-caption'), null, 'broken wrapper table removed');
+  assert.equal(doc.querySelector('#empty-a'), null, 'empty layout cells removed');
+  assert.equal(doc.querySelector('#empty-b'), null, 'empty layout cells removed');
+  assert.equal(doc.querySelector('#empty-nested'), null, 'empty nested caption tables removed');
+  assert.equal(doc.querySelector('#photo').getAttribute('width'), '600', 'image sizing attribute preserved');
+  assert.match(doc.querySelector('#photo').getAttribute('style'), /max-width:600px/, 'image sizing style preserved');
+  assert.equal(doc.querySelector('#body').getAttribute('data-gjs-type'), 'text', 'article body remains editable text');
+  assert.equal(doc.querySelector('#body').closest('td'), null, 'article body no longer trapped in side-column cell');
+});
+
+test('short image captions keep their caption table layout', () => {
+  const input =
+    '<table class="image-caption-block" id="caption">' +
+    '<tbody><tr><td align="center">' +
+    '<img id="photo" src="https://example.test/photo.jpg" width="300">' +
+    '<p id="caption-text">Records storage room.</p>' +
+    '</td></tr></tbody>' +
+    '</table>';
+
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  assert.ok(doc.querySelector('#caption'), 'normal caption table is preserved');
+  assert.equal(doc.querySelector('#caption-text').getAttribute('data-gjs-type'), 'text');
+});
+
 // --- sanitizeExportedHtml: strip GrapesJS runtime junk on save/export ---
 
 test('sanitizeExportedHtml strips gjs-selected and other gjs- runtime classes', () => {

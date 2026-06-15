@@ -58,6 +58,83 @@
     return (el.textContent || '').trim().length > 0;
   }
 
+  function meaningfulTextLength(el) {
+    return ((el.textContent || '').replace(/\s+/g, ' ').trim()).length;
+  }
+
+  function hasMedia(el) {
+    return !!(el && el.querySelector && el.querySelector('img,picture,svg,video'));
+  }
+
+  function isEmptyLayoutCell(el) {
+    return el && (el.tagName === 'TD' || el.tagName === 'TH') && !hasMedia(el) && !hasMeaningfulText(el);
+  }
+
+  function isArticleBodyBlock(el) {
+    if (!el) return false;
+    var len = meaningfulTextLength(el);
+    if (len >= 120) return true;
+    return el.tagName === 'P' && el.classList && el.classList.contains('paragraph') && len >= 80;
+  }
+
+  function isBrokenArticleCaptionBlock(table) {
+    if (!table || !table.classList || !table.classList.contains('image-caption-block')) return false;
+    if (!hasMedia(table)) return false;
+
+    var bodyBlocks = Array.prototype.filter.call(
+      table.querySelectorAll('p,div,blockquote,li'),
+      isArticleBodyBlock
+    );
+    if (!bodyBlocks.length) return false;
+
+    var hasEmptyCells = Array.prototype.some.call(table.querySelectorAll('td,th'), isEmptyLayoutCell);
+    var hasNestedCaptionTable = !!table.querySelector('table.image-caption-block');
+    return hasEmptyCells || hasNestedCaptionTable;
+  }
+
+  function isEmptyTable(el) {
+    return el && el.tagName === 'TABLE' && !hasMedia(el) && !hasMeaningfulText(el);
+  }
+
+  function appendCellFlowNodes(fragment, cell) {
+    var moved = false;
+    while (cell.firstChild) {
+      var child = cell.firstChild;
+      cell.removeChild(child);
+
+      if (child.nodeType === Node.TEXT_NODE && !child.textContent.trim()) {
+        continue;
+      }
+      if (child.nodeType === Node.ELEMENT_NODE && isEmptyTable(child)) {
+        continue;
+      }
+
+      fragment.appendChild(child);
+      moved = true;
+    }
+    return moved;
+  }
+
+  function flattenBrokenArticleCaptionBlocks(body) {
+    var tables = Array.prototype.slice.call(body.querySelectorAll('table.image-caption-block'));
+    tables.forEach(function (table) {
+      if (!table.parentNode || !isBrokenArticleCaptionBlock(table)) return;
+
+      var fragment = document.createDocumentFragment();
+      var moved = false;
+      Array.prototype.forEach.call(table.querySelectorAll('td,th'), function (cell) {
+        if (isEmptyLayoutCell(cell)) return;
+        if (appendCellFlowNodes(fragment, cell)) {
+          moved = true;
+        }
+      });
+
+      if (moved) {
+        table.parentNode.replaceChild(fragment, table);
+      }
+    });
+  }
+
   function stripRuntimeAttrs(el) {
     RUNTIME_ATTRS.forEach(function (attr) {
       el.removeAttribute(attr);
@@ -132,6 +209,7 @@
     // selection box, so strip them before typing.
     stripGjsClasses(doc.body);
     flattenBlocksInHeadings(doc.body);
+    flattenBrokenArticleCaptionBlocks(doc.body);
     typeTextBlocks(doc.body);
     typeStandaloneInlines(doc.body);
     return doc.body.innerHTML;
