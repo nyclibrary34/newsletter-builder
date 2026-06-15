@@ -177,6 +177,23 @@ test('title heading with draggable <br> is editable and br is cleaned', () => {
   assert.equal(doc.querySelector('#br1').hasAttribute('draggable'), false);
 });
 
+test('typed layout cell containing heading gives editing ownership to heading', () => {
+  const input =
+    '<table><tbody><tr>' +
+    '<td id="hcell" data-gjs-type="text" data-gjs-editable="true">' +
+    '<h1 id="h1" data-gjs-type="text" data-gjs-editable="true">Municipal Library Notes<br id="br1" draggable="true">October 2025</h1>' +
+    '</td>' +
+    '</tr></tbody></table>';
+
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  assert.equal(doc.querySelector('#hcell').hasAttribute('data-gjs-type'), false, 'table cell must not be a nested text owner');
+  assert.equal(doc.querySelector('#hcell').hasAttribute('data-gjs-editable'), false, 'stale editable marker removed from layout cell');
+  assert.equal(doc.querySelector('#h1').getAttribute('data-gjs-type'), 'text', 'heading keeps text ownership');
+  assert.equal(doc.querySelector('#br1').hasAttribute('draggable'), false);
+});
+
 test('Word-export h2>p>b>b with default-typed children flattens into one editable heading', () => {
   const input =
     '<h2 id="h2"><p class="MsoNormal" data-gjs-type="text" draggable="true" id="p">' +
@@ -341,6 +358,23 @@ test('sanitizeExportedHtml strips data-gjs-type="default" and draggable but keep
   assert.equal(doc.querySelector('#b1').hasAttribute('draggable'), false);
   assert.equal(doc.querySelector('#b2').hasAttribute('data-gjs-type'), false);
   assert.equal(doc.querySelector('#br').hasAttribute('draggable'), false);
+});
+
+test('sanitizeExportedHtml removes stale text ownership from layout cells with headings', () => {
+  const input =
+    '<table><tbody><tr>' +
+    '<td id="hcell" data-gjs-type="text" data-gjs-editable="true">' +
+    '<h1 id="h1" data-gjs-type="text" data-gjs-editable="true">Municipal Library Notes<br id="br1" draggable="true">October 2025</h1>' +
+    '</td>' +
+    '</tr></tbody></table>';
+
+  const out = sanitizeExportedHtml(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  assert.equal(doc.querySelector('#hcell').hasAttribute('data-gjs-type'), false, 'layout cell text marker removed on save');
+  assert.equal(doc.querySelector('#hcell').hasAttribute('data-gjs-editable'), false, 'layout cell editable marker removed on save');
+  assert.equal(doc.querySelector('#h1').getAttribute('data-gjs-type'), 'text', 'heading text marker preserved');
+  assert.equal(doc.querySelector('#br1').hasAttribute('draggable'), false);
 });
 
 test('sanitizeExportedHtml preserves content attributes (id, href, src, style, alt)', () => {

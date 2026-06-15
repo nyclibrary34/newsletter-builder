@@ -150,6 +150,26 @@
     });
   }
 
+  function isMaybeTextBlock(el) {
+    return el && MAYBE_TEXT_BLOCK_TAGS.indexOf(el.tagName) !== -1;
+  }
+
+  function isInvalidLayoutTextOwner(el) {
+    return isMaybeTextBlock(el) && el.getAttribute('data-gjs-type') === 'text' && !isPhrasingOnly(el);
+  }
+
+  function stripInvalidLayoutTextOwners(body) {
+    var selector = MAYBE_TEXT_BLOCK_TAGS.map(lower).map(function (tag) {
+      return tag + '[data-gjs-type="text"]';
+    }).join(',');
+
+    Array.prototype.forEach.call(body.querySelectorAll(selector), function (el) {
+      if (isInvalidLayoutTextOwner(el)) {
+        stripRuntimeAttrs(el);
+      }
+    });
+  }
+
   function flattenBlocksInHeadings(body) {
     var headingSel = HEADING_TAGS.map(lower).join(',');
     var blockSel = 'p,div,blockquote,pre';
@@ -210,6 +230,7 @@
     stripGjsClasses(doc.body);
     flattenBlocksInHeadings(doc.body);
     flattenBrokenArticleCaptionBlocks(doc.body);
+    stripInvalidLayoutTextOwners(doc.body);
     typeTextBlocks(doc.body);
     typeStandaloneInlines(doc.body);
     return doc.body.innerHTML;
@@ -237,7 +258,9 @@
 
   function stripRuntimeGjsAttrs(body) {
     Array.prototype.forEach.call(body.querySelectorAll('[data-gjs-type]'), function (el) {
-      if (el.getAttribute('data-gjs-type') !== 'text') {
+      if (isInvalidLayoutTextOwner(el)) {
+        stripRuntimeAttrs(el);
+      } else if (el.getAttribute('data-gjs-type') !== 'text') {
         el.removeAttribute('data-gjs-type');
       }
     });
