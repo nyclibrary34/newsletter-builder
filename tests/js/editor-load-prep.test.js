@@ -52,12 +52,16 @@ test('preserves existing id and class on retyped element', () => {
   assert.equal(el.getAttribute('data-gjs-type'), 'text');
 });
 
-test('idempotent on already-typed element', () => {
-  const input = '<div><b data-gjs-type="text">Hi</b></div>';
+test('typed inline inside text-only div is normalized to the block owner', () => {
+  const input = '<div id="owner"><b id="inline" data-gjs-type="text" draggable="true">Hi</b></div>';
   const out = makeStandaloneInlineEditable(input);
   const doc = new DOMParser().parseFromString(`<body>${out}</body>`, 'text/html');
-  const el = doc.querySelector('b');
-  assert.equal(el.getAttribute('data-gjs-type'), 'text');
+  const owner = doc.querySelector('#owner');
+  const inline = doc.querySelector('#inline');
+
+  assert.equal(owner.getAttribute('data-gjs-type'), 'text');
+  assert.equal(inline.hasAttribute('data-gjs-type'), false);
+  assert.equal(inline.hasAttribute('draggable'), false);
 });
 
 test('empty or non-string input returned unchanged', () => {
@@ -189,6 +193,72 @@ test('Word-export h2>p>b>b with default-typed children flattens into one editabl
   assert.equal(doc.querySelector('#b2').hasAttribute('data-gjs-type'), false);
   assert.equal(doc.querySelector('#br').hasAttribute('draggable'), false);
   assert.match(h2.textContent, /Update from the/);
+});
+
+test('typed inline descendants inside headings are stripped so heading owns editing', () => {
+  const input = '<h1 id="title" data-gjs-type="text">Municipal Library Notes <b id="date" data-gjs-type="text" draggable="true">December 2025</b></h1>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  const h1 = doc.querySelector('#title');
+  const date = doc.querySelector('#date');
+  assert.equal(h1.getAttribute('data-gjs-type'), 'text');
+  assert.equal(date.hasAttribute('data-gjs-type'), false);
+  assert.equal(date.hasAttribute('draggable'), false);
+});
+
+test('default-typed inline descendants are stripped from text blocks', () => {
+  const input = '<p id="copy" data-gjs-type="text">Intro <strong id="strong" data-gjs-type="default" draggable="true">bold text</strong> end.</p>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  const copy = doc.querySelector('#copy');
+  const strong = doc.querySelector('#strong');
+  assert.equal(copy.getAttribute('data-gjs-type'), 'text');
+  assert.equal(copy.textContent, 'Intro bold text end.');
+  assert.equal(strong.hasAttribute('data-gjs-type'), false);
+  assert.equal(strong.hasAttribute('draggable'), false);
+});
+
+test('table cell with image keeps paragraph editable without typing the image cell', () => {
+  const input =
+    '<table><tr>' +
+    '<td id="image-cell"><img src="https://example.test/photo.jpg" width="260"></td>' +
+    '<td id="text-cell"><p id="copy">Paragraph below or beside image</p></td>' +
+    '</tr></table>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  assert.equal(doc.querySelector('#image-cell').hasAttribute('data-gjs-type'), false);
+  assert.equal(doc.querySelector('#copy').getAttribute('data-gjs-type'), 'text');
+});
+
+test('already-typed maybe text block cleans typed inline descendants', () => {
+  const input = '<table><tr><td id="cell" data-gjs-type="text">Copy <b id="b" data-gjs-type="text" draggable="true">bold</b></td></tr></table>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  const cell = doc.querySelector('#cell');
+  const bold = doc.querySelector('#b');
+  assert.equal(cell.getAttribute('data-gjs-type'), 'text');
+  assert.equal(bold.hasAttribute('data-gjs-type'), false);
+  assert.equal(bold.hasAttribute('draggable'), false);
+});
+
+test('stale typed spans in text-only div are stripped so the paragraph block owns editing', () => {
+  const input =
+    '<div id="copy"><span id="outer"><span id="inner">Intro ' +
+    '<br id="br1" data-gjs-type="default" draggable="true">' +
+    '<span id="stale" data-gjs-type="text" draggable="true">Body copy</span>' +
+    '</span></span></div>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  assert.equal(doc.querySelector('#copy').getAttribute('data-gjs-type'), 'text');
+  assert.equal(doc.querySelector('#stale').hasAttribute('data-gjs-type'), false);
+  assert.equal(doc.querySelector('#stale').hasAttribute('draggable'), false);
+  assert.equal(doc.querySelector('#br1').hasAttribute('data-gjs-type'), false);
+  assert.equal(doc.querySelector('#br1').hasAttribute('draggable'), false);
 });
 
 test('empty spacer paragraph does not throw and becomes a (harmless) text block', () => {

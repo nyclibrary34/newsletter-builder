@@ -557,6 +557,67 @@ function addBgcolorFallbacks(doc) {
   });
 }
 
+function isSocialImage(img) {
+  if (!img) {
+    return false;
+  }
+  const parentLink = img.closest('a');
+  const href = parentLink ? (parentLink.getAttribute('href') || '').toLowerCase() : '';
+  const src = (img.getAttribute('src') || '').toLowerCase();
+  return /facebook|twitter|instagram|youtube|tumblr|linkedin/.test(`${href} ${src}`);
+}
+
+function numericAttr(value) {
+  const trimmed = (value || '').trim();
+  return /^\d+$/.test(trimmed) ? trimmed : '';
+}
+
+function getPixelStyleValue(styleProps, property) {
+  const value = (styleProps.get(property) || '').trim();
+  const match = value.match(/^(\d+)px$/i);
+  return match ? match[1] : '';
+}
+
+function isFullWidthStyle(styleProps) {
+  return (styleProps.get('width') || '').trim() === '100%';
+}
+
+function preserveImageSizing(img) {
+  const styleProps = parseStyleAttribute(img.getAttribute('style') || '');
+  let widthAttr = numericAttr(img.getAttribute('width'));
+  const heightAttr = numericAttr(img.getAttribute('height'));
+
+  if (!widthAttr) {
+    widthAttr = getPixelStyleValue(styleProps, 'width') || getPixelStyleValue(styleProps, 'max-width');
+    if (widthAttr) {
+      img.setAttribute('width', widthAttr);
+    }
+  }
+
+  if (heightAttr && !styleProps.has('height')) {
+    styleProps.set('height', `${heightAttr}px`);
+  }
+
+  if (widthAttr && !styleProps.has('max-width') && isFullWidthStyle(styleProps)) {
+    styleProps.set('max-width', `${widthAttr}px`);
+  }
+
+  if (!heightAttr && isFullWidthStyle(styleProps)) {
+    styleProps.set('height', 'auto');
+  }
+
+  if (isSocialImage(img)) {
+    styleProps.set('display', 'inline-block !important');
+  }
+
+  const styleValue = styleMapToString(styleProps);
+  if (styleValue) {
+    img.setAttribute('style', styleValue);
+  } else {
+    img.removeAttribute('style');
+  }
+}
+
 /**
  * Optimize image attributes for email compatibility
  * @param {Document} doc - Document object
@@ -565,96 +626,21 @@ function optimizeImages(doc) {
   const images = doc.querySelectorAll('img');
   
   images.forEach(img => {
-    // Ensure border="0" attribute
     if (!img.hasAttribute('border')) {
       img.setAttribute('border', '0');
     }
-    
-    // CRITICAL: Ensure all images have HTML width attribute for Outlook compatibility
-    // Outlook will scale images to original size without this attribute
-    const widthAttr = (img.getAttribute('width') || '').trim();
-    if (!widthAttr || !/^\d+$/.test(widthAttr)) {
-      const style = img.getAttribute('style') || '';
 
-      // Check if this is a social icon first
-      const parent = img.closest('a');
-      const isSocialIcon = parent && (
-        parent.href?.includes('facebook') ||
-        parent.href?.includes('twitter') ||
-        parent.href?.includes('instagram') ||
-        parent.href?.includes('youtube') ||
-        parent.href?.includes('tumblr') ||
-        parent.href?.includes('linkedin')
-      );
-
-      // Try to extract width from inline styles
-      // Match various width patterns: width: 100%, width: 573px, width:auto, etc.
-      const widthPxMatch = style.match(/width\s*:\s*(\d+)(?:px)?(?:\s|;|$)/i);
-      const maxWidthPxMatch = style.match(/max-width\s*:\s*(\d+)(?:px)?(?:\s|;|$)/i);
-      const widthPercentMatch = style.match(/width\s*:\s*(\d+)%/i);
-
-      if (widthPxMatch && parseInt(widthPxMatch[1]) > 0) {
-        // Use explicit pixel width from styles
-        img.setAttribute('width', widthPxMatch[1]);
-      } else if (maxWidthPxMatch && parseInt(maxWidthPxMatch[1]) > 0) {
-        // Use max-width as width
-        img.setAttribute('width', maxWidthPxMatch[1]);
-      } else if (widthPercentMatch && parseInt(widthPercentMatch[1]) === 100) {
-        // 100% width images should use 600 (standard email width)
-        img.setAttribute('width', '600');
-      } else if (isSocialIcon) {
-        // Social icons default to 42px
+    if (!numericAttr(img.getAttribute('width'))) {
+      const styleProps = parseStyleAttribute(img.getAttribute('style') || '');
+      const inferredWidth = getPixelStyleValue(styleProps, 'width') || getPixelStyleValue(styleProps, 'max-width');
+      if (inferredWidth) {
+        img.setAttribute('width', inferredWidth);
+      } else if (isSocialImage(img)) {
         img.setAttribute('width', '42');
-      } else {
-        // For other images without explicit width, use 600 as safe default
-        // This prevents Outlook from using the image's original size
-        img.setAttribute('width', '600');
       }
     }
-    
-    // Check if image is part of social media icons or logos
-    const parent = img.closest('a');
-    const isSocialIcon = parent && (
-      parent.href?.includes('facebook') ||
-      parent.href?.includes('twitter') ||
-      parent.href?.includes('instagram') ||
-      parent.href?.includes('youtube') ||
-      parent.href?.includes('tumblr') ||
-      parent.href?.includes('linkedin')
-    );
-    
-    // Don't modify display property for social icons or small inline images
-    if (!isSocialIcon) {
-      const style = img.getAttribute('style') || '';
-      if (!style.includes('display:') && !style.includes('display ')) {
-        // Check if this image is in a preserved layout container
-        const preservedParent = img.closest('[data-preserve-center], [data-preserve-layout]');
-        
-        if (!preservedParent) {
-          // Check if this image is likely a logo or should maintain inline behavior
-          const parentTd = img.closest('td, th, div');
-          const parentStyle = parentTd ? (parentTd.getAttribute('style') || '') : '';
-          
-          // Don't add display: block to images in centered containers (likely logos)
-          const isInCenteredContainer = parentStyle.includes('text-align: center') || 
-                                       parentStyle.includes('text-align:center');
-          const isSmallImage = img.getAttribute('width') && parseInt(img.getAttribute('width')) < 400;
-          
-          // Only add display: block for large content images, not logos or inline images
-          if (!isInCenteredContainer && !isSmallImage) {
-            // Parse existing styles and remove vertical-align (incompatible with display: block)
-            const styleProps = parseStyleAttribute(style);
-            styleProps.delete('vertical-align');
-            styleProps.set('display', 'block');
-            
-            const newStyle = Array.from(styleProps.entries())
-              .map(([prop, value]) => `${prop}: ${value}`)
-              .join('; ');
-            img.setAttribute('style', newStyle);
-          }
-        }
-      }
-    }
+
+    preserveImageSizing(img);
   });
 }
 

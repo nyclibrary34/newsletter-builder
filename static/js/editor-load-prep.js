@@ -11,6 +11,21 @@
   var TEXT_BLOCK_TAGS = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'BLOCKQUOTE', 'FIGCAPTION', 'CAPTION'];
   var MAYBE_TEXT_BLOCK_TAGS = ['TD', 'TH', 'DIV'];
   var PHRASING_TAGS = ['A', 'B', 'STRONG', 'I', 'EM', 'U', 'STRIKE', 'S', 'SPAN', 'BR', 'SUP', 'SUB', 'FONT', 'O:P', 'SMALL', 'MARK', 'ABBR', 'CODE', 'WBR', 'LABEL', 'BIG', 'TT'];
+  var OWNED_INLINE_DESCENDANT_TAGS = ['A', 'B', 'STRONG', 'I', 'EM', 'U', 'STRIKE', 'S', 'SPAN', 'BR', 'SUP', 'SUB', 'FONT', 'O:P', 'SMALL', 'MARK', 'ABBR', 'CODE', 'WBR', 'LABEL', 'BIG', 'TT'];
+  var RUNTIME_ATTRS = [
+    'data-gjs-type',
+    'data-gjs-editable',
+    'data-gjs-draggable',
+    'data-gjs-droppable',
+    'data-gjs-removable',
+    'data-gjs-copyable',
+    'data-gjs-resizable',
+    'data-gjs-name',
+    'data-gjs-stylable',
+    'data-gjs-highlightable',
+    'draggable',
+    'contenteditable'
+  ];
 
   function lower(t) { return t.toLowerCase(); }
 
@@ -43,18 +58,18 @@
     return (el.textContent || '').trim().length > 0;
   }
 
-  function cleanInlineDescendants(el) {
-    var typed = el.querySelectorAll('[data-gjs-type]');
-    Array.prototype.forEach.call(typed, function (d) {
-      if (d === el) return;
-      if (d.getAttribute('data-gjs-type') !== 'text') {
-        d.removeAttribute('data-gjs-type');
-      }
+  function stripRuntimeAttrs(el) {
+    RUNTIME_ATTRS.forEach(function (attr) {
+      el.removeAttribute(attr);
     });
-    var draggables = el.querySelectorAll('[draggable]');
-    Array.prototype.forEach.call(draggables, function (d) {
+  }
+
+  function cleanInlineDescendants(el) {
+    Array.prototype.forEach.call(el.querySelectorAll('*'), function (d) {
       if (d === el) return;
-      d.removeAttribute('draggable');
+      if (OWNED_INLINE_DESCENDANT_TAGS.indexOf(d.tagName) !== -1) {
+        stripRuntimeAttrs(d);
+      }
     });
   }
 
@@ -84,6 +99,10 @@
 
     var maybeSel = MAYBE_TEXT_BLOCK_TAGS.map(lower).join(',');
     Array.prototype.forEach.call(body.querySelectorAll(maybeSel), function (el) {
+      if (el.getAttribute('data-gjs-type') === 'text') {
+        cleanInlineDescendants(el);
+        return;
+      }
       if (el.hasAttribute('data-gjs-type')) return;
       if (hasMeaningfulText(el) && isPhrasingOnly(el)) {
         el.setAttribute('data-gjs-type', 'text');
@@ -97,6 +116,7 @@
     Array.prototype.forEach.call(body.querySelectorAll(selector), function (el) {
       if (isStandaloneInline(el)) {
         el.setAttribute('data-gjs-type', 'text');
+        cleanInlineDescendants(el);
       }
     });
   }

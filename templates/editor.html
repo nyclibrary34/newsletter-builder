@@ -204,7 +204,7 @@ JavaScript APIs Used:
 <script src="{{ url_for('static', filename='js/grapesjs-plugin-ckeditor/index.js') }}"></script>
 
 <!-- Newsletter Preset: Pre-configured components and styles for email templates -->
-<script src="https://unpkg.com/grapesjs-preset-newsletter@1.0.1"></script>
+<script src="{{ url_for('static', filename='js/grapesjs-preset-newsletter.min.js') }}"></script>
 
 <!-- HTML Processor: Client-side CSS inlining and ID cleanup (replaces juice server) -->
 <script src="{{ url_for('static', filename='js/html-processor.js') }}"></script>
@@ -619,6 +619,7 @@ JavaScript APIs Used:
   });
 
   // ===== EDITOR API REFERENCES =====
+  window.newsletterEditor = editor;
   var pnm = editor.Panels;        // Panel manager for adding custom toolbar buttons
   var cmdm = editor.Commands;     // Command manager for defining custom actions
 
