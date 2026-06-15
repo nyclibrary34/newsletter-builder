@@ -8,7 +8,7 @@ global.document = dom.window.document;
 global.DOMParser = dom.window.DOMParser;
 global.Node = dom.window.Node;
 
-const { makeStandaloneInlineEditable } = require('../../static/js/editor-load-prep.js');
+const { makeStandaloneInlineEditable, sanitizeExportedHtml } = require('../../static/js/editor-load-prep.js');
 
 test('standalone <b> inside <td> text block is not double-typed', () => {
   const input = '<table><tr><td><b id="ihgoz"><b id="iz5wc">Update from the<br>Municipal Library</b></b></td></tr></table>';
@@ -195,4 +195,69 @@ test('empty spacer paragraph does not throw and becomes a (harmless) text block'
   const out = makeStandaloneInlineEditable('<p id="sp" class="paragraph"></p>');
   const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
   assert.equal(doc.querySelector('#sp').getAttribute('data-gjs-type'), 'text');
+});
+
+// --- sanitizeExportedHtml: strip GrapesJS runtime junk on save/export ---
+
+test('sanitizeExportedHtml strips gjs-selected and other gjs- runtime classes', () => {
+  const input =
+    '<h2 id="h2" data-gjs-type="text"><b class="gjs-selected" id="b1">Update from the</b></h2>' +
+    '<div id="d1" class="gjs-hovered keep-me">x</div>';
+  const out = sanitizeExportedHtml(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+  // gjs-selected removed; element no longer carries a class attr (only class was gjs-)
+  assert.equal(doc.querySelector('#b1').hasAttribute('class'), false, 'gjs-selected stripped');
+  // non-gjs class preserved, gjs- class removed from a mixed list
+  assert.equal(doc.querySelector('#d1').getAttribute('class'), 'keep-me', 'only gjs- class removed');
+});
+
+test('sanitizeExportedHtml strips data-gjs-type="default" and draggable but keeps "text"', () => {
+  const input =
+    '<h2 id="h2" data-gjs-type="text" data-gjs-editable="true">' +
+    '<b data-gjs-type="default" draggable="true" id="b1">' +
+    '<b data-gjs-type="default" id="b2">Update from the' +
+    '<br data-gjs-type="default" draggable="true" id="br">Municipal Library</b></b></h2>';
+  const out = sanitizeExportedHtml(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+
+  // meaningful markers kept
+  assert.equal(doc.querySelector('#h2').getAttribute('data-gjs-type'), 'text', 'h2 text marker kept');
+  assert.equal(doc.querySelector('#h2').getAttribute('data-gjs-editable'), 'true', 'editable marker kept');
+  // runtime junk removed from children
+  assert.equal(doc.querySelector('#b1').hasAttribute('data-gjs-type'), false);
+  assert.equal(doc.querySelector('#b1').hasAttribute('draggable'), false);
+  assert.equal(doc.querySelector('#b2').hasAttribute('data-gjs-type'), false);
+  assert.equal(doc.querySelector('#br').hasAttribute('draggable'), false);
+});
+
+test('sanitizeExportedHtml preserves content attributes (id, href, src, style, alt)', () => {
+  const input =
+    '<p id="p1" class="paragraph gjs-selected" style="color:red">Happy ' +
+    '<a draggable="true" data-gjs-type="link" href="https://example.com" id="a1">link</a></p>';
+  const out = sanitizeExportedHtml(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+  assert.equal(doc.querySelector('#p1').getAttribute('id'), 'p1');
+  assert.equal(doc.querySelector('#p1').getAttribute('style'), 'color:red');
+  assert.equal(doc.querySelector('#p1').getAttribute('class'), 'paragraph', 'gjs- removed, content class kept');
+  assert.equal(doc.querySelector('#a1').getAttribute('href'), 'https://example.com', 'href preserved');
+  assert.equal(doc.querySelector('#a1').hasAttribute('draggable'), false);
+  assert.equal(doc.querySelector('#a1').hasAttribute('data-gjs-type'), false, 'non-text gjs type removed');
+});
+
+test('sanitizeExportedHtml returns empty/non-string input unchanged', () => {
+  assert.equal(sanitizeExportedHtml(''), '');
+  assert.equal(sanitizeExportedHtml(null), null);
+  assert.equal(sanitizeExportedHtml(undefined), undefined);
+});
+
+test('makeStandaloneInlineEditable strips stored gjs-selected so existing files load clean', () => {
+  // A previously-saved file baked the editor selection class onto an inner <b>.
+  // On load GrapesJS would otherwise adopt it as a real author class and render
+  // a broken nested selection box (the reported symptom).
+  const input =
+    '<h2 id="h2"><b class="gjs-selected" id="b1">Update from the</b></h2>';
+  const out = makeStandaloneInlineEditable(input);
+  const doc = new DOMParser().parseFromString('<body>' + out + '</body>', 'text/html');
+  assert.equal(doc.querySelector('#b1').hasAttribute('class'), false, 'gjs-selected stripped on load');
+  assert.equal(doc.querySelector('#h2').getAttribute('data-gjs-type'), 'text', 'h2 still typed text');
 });

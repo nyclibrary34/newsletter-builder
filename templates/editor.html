@@ -684,6 +684,9 @@ JavaScript APIs Used:
     }
 
     let html = editor.getHtml();
+    if (window.NewsletterEditorLoadPrep && window.NewsletterEditorLoadPrep.sanitizeExportedHtml) {
+      html = window.NewsletterEditorLoadPrep.sanitizeExportedHtml(html);  // Strip gjs-selected + runtime data-gjs junk
+    }
     html = ensureAlignmentStyles(html);         // Preserve alignment before saving
 
     const css = editor.getCss();
@@ -1293,6 +1296,9 @@ JavaScript APIs Used:
       try {
         // --- Extract Content from Editor ---
         let html = editor.getHtml();                // Get HTML content from canvas
+        if (window.NewsletterEditorLoadPrep && window.NewsletterEditorLoadPrep.sanitizeExportedHtml) {
+          html = window.NewsletterEditorLoadPrep.sanitizeExportedHtml(html);  // Strip gjs-selected + runtime data-gjs junk
+        }
         const rawCss = editor.getCss();             // Get raw CSS styles from editor
         const css = dedupeCssRules(sanitizeCssForEmail(rawCss)); // Sanitize + dedupe accumulated rules
         

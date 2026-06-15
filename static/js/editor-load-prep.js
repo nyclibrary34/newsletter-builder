@@ -106,11 +106,63 @@
       return htmlString;
     }
     var doc = new DOMParser().parseFromString('<body>' + htmlString + '</body>', 'text/html');
+    // Existing files may have baked the editor selection class (gjs-selected)
+    // and other runtime gjs- classes into the stored markup. GrapesJS would
+    // adopt them as real author classes on load and render a broken nested
+    // selection box, so strip them before typing.
+    stripGjsClasses(doc.body);
     flattenBlocksInHeadings(doc.body);
     typeTextBlocks(doc.body);
     typeStandaloneInlines(doc.body);
     return doc.body.innerHTML;
   }
 
-  return { makeStandaloneInlineEditable: makeStandaloneInlineEditable };
+  // Remove GrapesJS runtime-only artifacts before a newsletter is saved or
+  // exported. GrapesJS bakes editor state into the canvas DOM — the selection
+  // class (gjs-selected), child component types (data-gjs-type="default") and
+  // draggable handles — and editor.getHtml() serializes them into the stored
+  // file. Left in place they render a broken "selected" outline on the next
+  // load and accumulate on every save. We keep the meaningful authoring markers
+  // (data-gjs-type="text", data-gjs-editable) and every content attribute.
+  function stripGjsClasses(body) {
+    Array.prototype.forEach.call(body.querySelectorAll('[class]'), function (el) {
+      var kept = (el.getAttribute('class') || '').split(/\s+/).filter(function (c) {
+        return c && c.indexOf('gjs-') !== 0;
+      });
+      if (kept.length) {
+        el.setAttribute('class', kept.join(' '));
+      } else {
+        el.removeAttribute('class');
+      }
+    });
+  }
+
+  function stripRuntimeGjsAttrs(body) {
+    Array.prototype.forEach.call(body.querySelectorAll('[data-gjs-type]'), function (el) {
+      if (el.getAttribute('data-gjs-type') !== 'text') {
+        el.removeAttribute('data-gjs-type');
+      }
+    });
+    Array.prototype.forEach.call(body.querySelectorAll('[draggable]'), function (el) {
+      el.removeAttribute('draggable');
+    });
+    Array.prototype.forEach.call(body.querySelectorAll('[data-gjs-highlightable]'), function (el) {
+      el.removeAttribute('data-gjs-highlightable');
+    });
+  }
+
+  function sanitizeExportedHtml(htmlString) {
+    if (typeof htmlString !== 'string' || htmlString.length === 0) {
+      return htmlString;
+    }
+    var doc = new DOMParser().parseFromString('<body>' + htmlString + '</body>', 'text/html');
+    stripGjsClasses(doc.body);
+    stripRuntimeGjsAttrs(doc.body);
+    return doc.body.innerHTML;
+  }
+
+  return {
+    makeStandaloneInlineEditable: makeStandaloneInlineEditable,
+    sanitizeExportedHtml: sanitizeExportedHtml
+  };
 });
