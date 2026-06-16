@@ -264,6 +264,108 @@ export default async function ({ page, context }) {
 }
     """.strip()
 
+    BROWSERLESS_PDF_FUNCTION = """
+export default async function ({ page, context }) {
+  const viewportWidth = context.viewportWidth || 880;
+  const viewportHeight = context.viewportHeight || 1200;
+  const deviceScaleFactor = context.deviceScaleFactor || 2;
+
+  await page.setViewport({
+    width: viewportWidth,
+    height: viewportHeight,
+    deviceScaleFactor,
+  });
+
+  await page.emulateMediaType('screen');
+
+  await page.setContent(context.html, {
+    waitUntil: 'networkidle2',
+    timeout: 15000,
+  });
+
+  await page.waitForFunction(
+    () => Array.from(document.images).every((img) => img.complete),
+    { timeout: 5000 }
+  ).catch(() => {});
+
+  await page.addStyleTag({
+    content: `
+      html, body, * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+    `,
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 250));
+
+  const metrics = await page.evaluate(() => {
+    const body = document.body;
+    const html = document.documentElement;
+    return {
+      width: Math.max(
+        body.scrollWidth || 0,
+        body.offsetWidth || 0,
+        html.clientWidth || 0,
+        html.scrollWidth || 0,
+        html.offsetWidth || 0,
+        window.innerWidth || 0
+      ),
+      height: Math.max(
+        body.scrollHeight || 0,
+        body.offsetHeight || 0,
+        html.clientHeight || 0,
+        html.scrollHeight || 0,
+        html.offsetHeight || 0,
+        window.innerHeight || 0
+      ),
+    };
+  });
+
+  const cssPxPerIn = 96;
+  const pageWidthIn = Math.max(1, Number(context.pageWidthIn || 8.5));
+  const minimumPageHeightIn = Math.max(1, Number(context.pageHeightIn || 11));
+  const marginIn = Math.max(0, Number(context.marginIn || 0));
+  const contentWidthIn = Math.max(0.1, pageWidthIn - marginIn * 2);
+  const renderedWidthIn = Math.max(0.1, metrics.width / cssPxPerIn);
+  const fitWidthScale = contentWidthIn / renderedWidthIn;
+  const manualScale = Math.max(0.1, Number(context.manualScale || 1));
+  const maxScale = Math.max(0.1, Number(context.maxScale || 2));
+  const allowScaleUp = context.allowScaleUp !== false;
+  const manualScaleSupplied = context.manualScaleSupplied === true;
+
+  const maxAllowedScale = allowScaleUp
+    ? Math.min(fitWidthScale, maxScale)
+    : Math.min(fitWidthScale, 1);
+
+  let desiredScale = manualScaleSupplied
+    ? manualScale
+    : (fitWidthScale >= 1 && allowScaleUp ? Math.min(fitWidthScale, maxScale) : fitWidthScale);
+
+  desiredScale = Math.max(0.1, desiredScale);
+  desiredScale = allowScaleUp ? Math.min(desiredScale, maxScale) : Math.min(desiredScale, 1);
+
+  const pdfScale = Math.max(0.1, Math.min(maxAllowedScale, desiredScale));
+  const contentHeightIn = Math.max(0.1, (metrics.height / cssPxPerIn) * pdfScale);
+  const pdfHeightIn = Math.max(minimumPageHeightIn, marginIn * 2 + contentHeightIn + 0.05);
+
+  return await page.pdf({
+    width: `${pageWidthIn}in`,
+    height: `${pdfHeightIn}in`,
+    margin: {
+      top: `${marginIn}in`,
+      right: `${marginIn}in`,
+      bottom: `${marginIn}in`,
+      left: `${marginIn}in`,
+    },
+    printBackground: true,
+    displayHeaderFooter: false,
+    preferCSSPageSize: false,
+    scale: pdfScale,
+  });
+}
+    """.strip()
+
     def __init__(self, browserless_token: Optional[str] = None) -> None:
         self.browserless_token = browserless_token or os.environ.get("BROWSERLESS_TOKEN")
 
@@ -306,6 +408,22 @@ export default async function ({ page, context }) {
         capture_height: Optional[float] = None
 
         if self.browserless_token:
+            native_pdf = await self._pdf_via_browserless(
+                prepared_html,
+                page_width_in=page_width_in,
+                page_height_in=page_height_in,
+                margin_in=margin_in,
+                manual_scale=manual_scale,
+                manual_scale_supplied=scale_supplied,
+                allow_scale_up=allow_scale_up,
+                max_scale=max_scale,
+            )
+            if native_pdf:
+                return self._apply_pdf_view_preferences(native_pdf)
+
+            logging.warning(
+                "Browserless native PDF render failed; falling back to screenshot PDF without selectable text"
+            )
             render_result = await self._render_via_browserless(prepared_html)
             if render_result:
                 screenshot = render_result["screenshot"]
@@ -393,6 +511,79 @@ export default async function ({ page, context }) {
             capture_width=capture_width,
             capture_height=capture_height,
         )
+
+    async def _pdf_via_browserless(
+        self,
+        html: str,
+        *,
+        page_width_in: float,
+        page_height_in: float,
+        margin_in: float,
+        manual_scale: float,
+        manual_scale_supplied: bool,
+        allow_scale_up: bool,
+        max_scale: float,
+    ) -> Optional[bytes]:
+        """Render a native Chromium PDF so text remains selectable and links remain real."""
+        if not self.browserless_token:
+            return None
+
+        url = f"https://production-sfo.browserless.io/function?token={self.browserless_token}"
+        payload: Dict[str, Any] = {
+            "code": self.BROWSERLESS_PDF_FUNCTION,
+            "context": {
+                "html": html,
+                "viewportWidth": self.BROWSERLESS_VIEWPORT_WIDTH,
+                "viewportHeight": self.DEFAULT_VIEWPORT_HEIGHT,
+                "deviceScaleFactor": self.BROWSERLESS_DEVICE_SCALE_FACTOR,
+                "pageWidthIn": page_width_in,
+                "pageHeightIn": page_height_in,
+                "marginIn": margin_in,
+                "manualScale": manual_scale,
+                "manualScaleSupplied": manual_scale_supplied,
+                "allowScaleUp": allow_scale_up,
+                "maxScale": max_scale,
+            },
+        }
+
+        def _post_request() -> Optional[bytes]:
+            try:
+                response = requests.post(url, json=payload, timeout=60)
+
+                if not response.ok:
+                    error_text = response.text[:200] if response.text else "No response body"
+                    logging.error(
+                        "Browserless native PDF request returned %s: %s",
+                        response.status_code,
+                        error_text,
+                    )
+                    return None
+
+                response_headers = getattr(response, "headers", {})
+                response_content = getattr(response, "content", b"")
+                content_type = response_headers.get("Content-Type", "").split(";")[0].lower()
+                if response_content.startswith(b"%PDF") or content_type == "application/pdf":
+                    logging.info("Browserless native PDF render successful: %s bytes", len(response_content))
+                    return response_content
+
+                body = response.json()
+                data = body.get("data") if isinstance(body, dict) else None
+                if not isinstance(data, dict):
+                    data = body if isinstance(body, dict) else {}
+
+                pdf_b64 = data.get("pdf")
+                if not isinstance(pdf_b64, str):
+                    logging.error("Browserless native PDF response did not include PDF data")
+                    return None
+
+                pdf_bytes = base64.b64decode(pdf_b64)
+                logging.info("Browserless native PDF render successful: %s bytes", len(pdf_bytes))
+                return pdf_bytes
+            except Exception as exc:
+                logging.error("Browserless native PDF request failed: %s", exc, exc_info=True)
+                return None
+
+        return await asyncio.to_thread(_post_request)
 
     async def _render_via_browserless(self, html: str) -> Optional[Dict[str, Any]]:
         """Render HTML with Browserless and return screenshot bytes plus link metadata."""

@@ -110,6 +110,24 @@ def _png_bytes(width=200, height=100):
 
 
 class TestPdfLinks:
+    def test_generate_pdf_prefers_native_browserless_pdf(self, monkeypatch):
+        service = PDFService(browserless_token="test-token")
+
+        async def _native_pdf(html, **kwargs):
+            assert "Copy this text" in html
+            assert kwargs["page_width_in"] == service.DEFAULT_PAGE_WIDTH_IN
+            return b"%PDF native selectable text"
+
+        async def _screenshot_render(html):
+            pytest.fail("generate_single_page_pdf should not use screenshot fallback")
+
+        monkeypatch.setattr(service, "_pdf_via_browserless", _native_pdf, raising=False)
+        monkeypatch.setattr(service, "_render_via_browserless", _screenshot_render)
+
+        result = asyncio.run(service.generate_single_page_pdf("<p>Copy this text</p>"))
+
+        assert result == b"%PDF native selectable text"
+
     def test_browserless_function_response_preserves_link_metadata(self, monkeypatch):
         import app.services.pdf as pdf_mod
 
@@ -155,6 +173,46 @@ class TestPdfLinks:
         assert result["links"][0]["href"] == "https://example.com"
         assert result["capture_width"] == 200
         assert result["capture_height"] == 100
+
+    def test_browserless_native_pdf_response_returns_pdf_bytes(self, monkeypatch):
+        import app.services.pdf as pdf_mod
+
+        pdf_bytes = b"%PDF selectable text"
+        encoded = base64.b64encode(pdf_bytes).decode("ascii")
+        captured = {}
+
+        class _FunctionResponse:
+            ok = True
+
+            def json(self):
+                return {"data": {"pdf": encoded}}
+
+        def _post(url, json=None, timeout=None):
+            captured["url"] = url
+            captured["json"] = json
+            captured["timeout"] = timeout
+            return _FunctionResponse()
+
+        monkeypatch.setattr(pdf_mod.requests, "post", _post)
+
+        service = PDFService(browserless_token="test-token")
+        result = asyncio.run(
+            service._pdf_via_browserless(
+                "<p>Copy me</p>",
+                page_width_in=8.5,
+                page_height_in=11,
+                margin_in=0.25,
+                manual_scale=1,
+                manual_scale_supplied=True,
+                allow_scale_up=True,
+                max_scale=2,
+            )
+        )
+
+        assert captured["url"].endswith("/function?token=test-token")
+        assert captured["json"]["context"]["html"] == "<p>Copy me</p>"
+        assert captured["json"]["context"]["pageWidthIn"] == 8.5
+        assert result == pdf_bytes
 
     def test_compose_pdf_adds_clickable_url_annotation(self):
         service = PDFService()
