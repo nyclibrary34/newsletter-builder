@@ -290,9 +290,18 @@ export default async function ({ page, context }) {
 
   await page.addStyleTag({
     content: `
+      :root {
+        --pdf-paragraph-side-inset: 12px;
+      }
+
       html, body, * {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
+      }
+
+      p:not(:empty) {
+        padding-left: var(--pdf-paragraph-side-inset) !important;
+        padding-right: var(--pdf-paragraph-side-inset) !important;
       }
     `,
   });
@@ -302,6 +311,13 @@ export default async function ({ page, context }) {
   const metrics = await page.evaluate(() => {
     const body = document.body;
     const html = document.documentElement;
+    let maxBottom = 0;
+    document.querySelectorAll('*').forEach((element) => {
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 0 || rect.height > 0) {
+        maxBottom = Math.max(maxBottom, rect.bottom + window.scrollY);
+      }
+    });
     return {
       width: Math.max(
         body.scrollWidth || 0,
@@ -311,20 +327,12 @@ export default async function ({ page, context }) {
         html.offsetWidth || 0,
         window.innerWidth || 0
       ),
-      height: Math.max(
-        body.scrollHeight || 0,
-        body.offsetHeight || 0,
-        html.clientHeight || 0,
-        html.scrollHeight || 0,
-        html.offsetHeight || 0,
-        window.innerHeight || 0
-      ),
+      height: Math.max(maxBottom, 1),
     };
   });
 
   const cssPxPerIn = 96;
   const pageWidthIn = Math.max(1, Number(context.pageWidthIn || 8.5));
-  const minimumPageHeightIn = Math.max(1, Number(context.pageHeightIn || 11));
   const marginIn = Math.max(0, Number(context.marginIn || 0));
   const contentWidthIn = Math.max(0.1, pageWidthIn - marginIn * 2);
   const renderedWidthIn = Math.max(0.1, metrics.width / cssPxPerIn);
@@ -347,7 +355,7 @@ export default async function ({ page, context }) {
 
   const pdfScale = Math.max(0.1, Math.min(maxAllowedScale, desiredScale));
   const contentHeightIn = Math.max(0.1, (metrics.height / cssPxPerIn) * pdfScale);
-  const pdfHeightIn = Math.max(minimumPageHeightIn, marginIn * 2 + contentHeightIn + 0.05);
+  const pdfHeightIn = marginIn * 2 + contentHeightIn;
 
   return await page.pdf({
     width: `${pageWidthIn}in`,

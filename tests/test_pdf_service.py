@@ -110,6 +110,35 @@ def _png_bytes(width=200, height=100):
 
 
 class TestPdfLinks:
+    def test_browserless_pdf_script_trims_page_height_to_content(self):
+        script = PDFService.BROWSERLESS_PDF_FUNCTION
+
+        assert "minimumPageHeightIn" not in script
+        assert "Math.max(minimumPageHeightIn" not in script
+        assert "const pdfHeightIn = marginIn * 2 + contentHeightIn;" in script
+
+    def test_browserless_pdf_script_does_not_count_viewport_as_content_height(self):
+        script = PDFService.BROWSERLESS_PDF_FUNCTION
+        height_block = script.split("height: Math.max(", 1)[1].split("),", 1)[0]
+
+        assert "window.innerHeight" not in height_block
+        assert "html.clientHeight" not in height_block
+
+    def test_browserless_pdf_script_measures_content_height_from_elements(self):
+        script = PDFService.BROWSERLESS_PDF_FUNCTION
+
+        assert "let maxBottom = 0;" in script
+        assert "document.querySelectorAll('*')" in script
+        assert "height: Math.max(maxBottom, 1)" in script
+
+    def test_browserless_pdf_script_adds_small_paragraph_side_inset(self):
+        script = PDFService.BROWSERLESS_PDF_FUNCTION
+
+        assert "--pdf-paragraph-side-inset: 12px" in script
+        assert "p:not(:empty)" in script
+        assert "padding-left: var(--pdf-paragraph-side-inset) !important" in script
+        assert "padding-right: var(--pdf-paragraph-side-inset) !important" in script
+
     def test_generate_pdf_prefers_native_browserless_pdf(self, monkeypatch):
         service = PDFService(browserless_token="test-token")
 
