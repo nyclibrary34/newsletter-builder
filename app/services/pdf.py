@@ -131,6 +131,7 @@ class PDFService:
     RENDER_DELAY_MS = 250  # small settle buffer; image readiness is awaited explicitly
     BROWSERLESS_VIEWPORT_WIDTH = 880
     BROWSERLESS_DEVICE_SCALE_FACTOR = 2
+    PDF_LINK_SCHEMES = ("http://", "https://", "mailto:", "tel:")
 
     SINGLE_PAGE_CSS = """
         * {
@@ -183,6 +184,86 @@ class PDFService:
         }
     """
 
+    BROWSERLESS_RENDER_FUNCTION = """
+export default async function ({ page, context }) {
+  const viewportWidth = context.viewportWidth || 880;
+  const viewportHeight = context.viewportHeight || 1200;
+  const deviceScaleFactor = context.deviceScaleFactor || 2;
+
+  await page.setViewport({
+    width: viewportWidth,
+    height: viewportHeight,
+    deviceScaleFactor,
+  });
+
+  await page.setContent(context.html, {
+    waitUntil: 'networkidle2',
+    timeout: 15000,
+  });
+
+  await page.waitForFunction(
+    () => Array.from(document.images).every((img) => img.complete),
+    { timeout: 5000 }
+  ).catch(() => {});
+
+  await new Promise((resolve) => setTimeout(resolve, 250));
+
+  const metrics = await page.evaluate(() => {
+    const body = document.body;
+    const html = document.documentElement;
+    const width = Math.max(
+      body.scrollWidth || 0,
+      body.offsetWidth || 0,
+      html.clientWidth || 0,
+      html.scrollWidth || 0,
+      html.offsetWidth || 0,
+      window.innerWidth || 0
+    );
+    const height = Math.max(
+      body.scrollHeight || 0,
+      body.offsetHeight || 0,
+      html.clientHeight || 0,
+      html.scrollHeight || 0,
+      html.offsetHeight || 0,
+      window.innerHeight || 0
+    );
+    const links = Array.from(document.querySelectorAll('a[href]')).flatMap((anchor) => {
+      const href = anchor.href;
+      if (!/^(https?:|mailto:|tel:)/i.test(href)) {
+        return [];
+      }
+      return Array.from(anchor.getClientRects())
+        .filter((rect) => rect.width > 0 && rect.height > 0)
+        .map((rect) => ({
+          href,
+          x: rect.left + window.scrollX,
+          y: rect.top + window.scrollY,
+          width: rect.width,
+          height: rect.height,
+        }));
+    });
+    return { width, height, links };
+  });
+
+  const screenshot = await page.screenshot({
+    type: 'png',
+    fullPage: true,
+    omitBackground: false,
+    encoding: 'base64',
+  });
+
+  return {
+    data: {
+      screenshot,
+      links: metrics.links,
+      captureWidth: metrics.width,
+      captureHeight: metrics.height,
+    },
+    type: 'application/json',
+  };
+}
+    """.strip()
+
     def __init__(self, browserless_token: Optional[str] = None) -> None:
         self.browserless_token = browserless_token or os.environ.get("BROWSERLESS_TOKEN")
 
@@ -220,11 +301,25 @@ class PDFService:
 
         # Use Browserless if token is available (required for Vercel, optional for local)
         screenshot: Optional[bytes] = None
-        
+        link_rects: Iterable[Dict[str, Any]] = []
+        capture_width: Optional[float] = None
+        capture_height: Optional[float] = None
+
         if self.browserless_token:
-            screenshot = await self._screenshot_via_browserless(prepared_html)
+            render_result = await self._render_via_browserless(prepared_html)
+            if render_result:
+                screenshot = render_result["screenshot"]
+                link_rects = render_result.get("links") or []
+                capture_width = render_result.get("capture_width")
+                capture_height = render_result.get("capture_height")
+            else:
+                screenshot = await self._screenshot_via_browserless(prepared_html)
+                if screenshot is not None:
+                    logging.warning(
+                        "Browserless function render failed; generated PDF will not include clickable links"
+                    )
             if screenshot is None:
-                logging.error("Browserless screenshot request failed - check token validity and API status")
+                logging.error("Browserless render request failed - check token validity and API status")
         
         if screenshot is None:
             # Browserless is REQUIRED - no Playwright fallback
@@ -294,7 +389,68 @@ class PDFService:
             allow_scale_up=allow_scale_up,
             max_scale=max_scale,
             background_color=background_color,
+            link_rects=link_rects,
+            capture_width=capture_width,
+            capture_height=capture_height,
         )
+
+    async def _render_via_browserless(self, html: str) -> Optional[Dict[str, Any]]:
+        """Render HTML with Browserless and return screenshot bytes plus link metadata."""
+        if not self.browserless_token:
+            return None
+
+        url = f"https://production-sfo.browserless.io/function?token={self.browserless_token}"
+        payload: Dict[str, Any] = {
+            "code": self.BROWSERLESS_RENDER_FUNCTION,
+            "context": {
+                "html": html,
+                "viewportWidth": self.BROWSERLESS_VIEWPORT_WIDTH,
+                "viewportHeight": self.DEFAULT_VIEWPORT_HEIGHT,
+                "deviceScaleFactor": self.BROWSERLESS_DEVICE_SCALE_FACTOR,
+            },
+        }
+
+        def _post_request() -> Optional[Dict[str, Any]]:
+            try:
+                response = requests.post(url, json=payload, timeout=60)
+
+                if not response.ok:
+                    error_text = response.text[:200] if response.text else "No response body"
+                    logging.error(
+                        "Browserless function request returned %s: %s",
+                        response.status_code,
+                        error_text,
+                    )
+                    return None
+
+                body = response.json()
+                data = body.get("data") if isinstance(body, dict) else None
+                if not isinstance(data, dict):
+                    data = body if isinstance(body, dict) else {}
+
+                screenshot_b64 = data.get("screenshot")
+                if not isinstance(screenshot_b64, str):
+                    logging.error("Browserless function response did not include screenshot data")
+                    return None
+
+                screenshot_bytes = base64.b64decode(screenshot_b64)
+                logging.info(
+                    "Browserless function render successful: %s bytes, %s link rectangles",
+                    len(screenshot_bytes),
+                    len(data.get("links") or []),
+                )
+                return {
+                    "screenshot": screenshot_bytes,
+                    "links": data.get("links") or [],
+                    "capture_width": data.get("captureWidth"),
+                    "capture_height": data.get("captureHeight"),
+                }
+
+            except Exception as exc:
+                logging.error("Browserless function request failed: %s", exc, exc_info=True)
+                return None
+
+        return await asyncio.to_thread(_post_request)
 
     async def _screenshot_via_browserless(self, html: str) -> Optional[bytes]:
         """Capture a PNG screenshot using the Browserless REST API."""
@@ -434,9 +590,13 @@ class PDFService:
         allow_scale_up: bool,
         max_scale: float,
         background_color: Tuple[int, int, int],
+        link_rects: Optional[Iterable[Dict[str, Any]]] = None,
+        capture_width: Optional[float] = None,
+        capture_height: Optional[float] = None,
     ) -> bytes:
         """Composite the rendered image onto a single PDF page."""
         image = Image.open(BytesIO(image_bytes)).convert("RGB")
+        original_width, original_height = image.size
 
         page_width_px = max(1, int(page_width_in * dpi))
         page_height_px = max(1, int(page_height_in * dpi))
@@ -492,7 +652,136 @@ class PDFService:
         canvas.save(output, format="PDF", resolution=dpi)
         output.seek(0)
         pdf_bytes = output.read()
+        pdf_bytes = self._apply_pdf_links(
+            pdf_bytes,
+            link_rects=link_rects or [],
+            capture_width=capture_width or original_width,
+            capture_height=capture_height or original_height,
+            image_width=original_width,
+            image_height=original_height,
+            page_width_px=page_width_px,
+            page_height_px=page_height_px,
+            offset_x=offset_x,
+            offset_y=offset_y,
+            scale_ratio=scale_ratio,
+            dpi=dpi,
+        )
         return self._apply_pdf_view_preferences(pdf_bytes)
+
+    def _apply_pdf_links(
+        self,
+        pdf_bytes: bytes,
+        *,
+        link_rects: Iterable[Dict[str, Any]],
+        capture_width: float,
+        capture_height: float,
+        image_width: int,
+        image_height: int,
+        page_width_px: int,
+        page_height_px: int,
+        offset_x: int,
+        offset_y: int,
+        scale_ratio: float,
+        dpi: int,
+    ) -> bytes:
+        """Overlay invisible PDF link annotations over rendered anchor rectangles."""
+        try:
+            from pypdf import PdfReader, PdfWriter
+            from pypdf.generic import (
+                ArrayObject,
+                DictionaryObject,
+                FloatObject,
+                NameObject,
+                NumberObject,
+                TextStringObject,
+            )
+        except ImportError:
+            return pdf_bytes
+
+        valid_rects = list(link_rects or [])
+        try:
+            capture_width = float(capture_width)
+            capture_height = float(capture_height)
+        except (TypeError, ValueError):
+            return pdf_bytes
+
+        if not valid_rects or capture_width <= 0 or capture_height <= 0:
+            return pdf_bytes
+
+        try:
+            reader = PdfReader(BytesIO(pdf_bytes))
+            writer = PdfWriter()
+            writer.clone_document_from_reader(reader)
+            page = writer.pages[0]
+
+            annots = page.get("/Annots")
+
+            capture_to_image_x = image_width / capture_width
+            capture_to_image_y = image_height / capture_height
+            px_to_pt = 72.0 / dpi
+            page_width_pt = page_width_px * px_to_pt
+            page_height_pt = page_height_px * px_to_pt
+
+            for rect in valid_rects:
+                href = str(rect.get("href") or "").strip()
+                if not self._is_pdf_link_href(href):
+                    continue
+
+                try:
+                    x = float(rect.get("x", 0))
+                    y = float(rect.get("y", 0))
+                    width = float(rect.get("width", 0))
+                    height = float(rect.get("height", 0))
+                except (TypeError, ValueError):
+                    continue
+
+                if width <= 0 or height <= 0:
+                    continue
+
+                left_px = offset_x + x * capture_to_image_x * scale_ratio
+                top_px = offset_y + y * capture_to_image_y * scale_ratio
+                right_px = offset_x + (x + width) * capture_to_image_x * scale_ratio
+                bottom_px = offset_y + (y + height) * capture_to_image_y * scale_ratio
+
+                left = max(0.0, min(page_width_pt, left_px * px_to_pt))
+                right = max(0.0, min(page_width_pt, right_px * px_to_pt))
+                top = max(0.0, min(page_height_pt, page_height_pt - top_px * px_to_pt))
+                bottom = max(0.0, min(page_height_pt, page_height_pt - bottom_px * px_to_pt))
+
+                if right <= left or top <= bottom:
+                    continue
+
+                annotation = DictionaryObject({
+                    NameObject("/Type"): NameObject("/Annot"),
+                    NameObject("/Subtype"): NameObject("/Link"),
+                    NameObject("/Rect"): ArrayObject([
+                        FloatObject(left),
+                        FloatObject(bottom),
+                        FloatObject(right),
+                        FloatObject(top),
+                    ]),
+                    NameObject("/Border"): ArrayObject([
+                        NumberObject(0),
+                        NumberObject(0),
+                        NumberObject(0),
+                    ]),
+                    NameObject("/A"): DictionaryObject({
+                        NameObject("/S"): NameObject("/URI"),
+                        NameObject("/URI"): TextStringObject(href),
+                    }),
+                })
+                if annots is None:
+                    annots = ArrayObject()
+                    page[NameObject("/Annots")] = annots
+                annots.append(writer._add_object(annotation))
+
+            buffer = BytesIO()
+            writer.write(buffer)
+            buffer.seek(0)
+            return buffer.read()
+        except Exception:
+            logging.debug("Unable to apply PDF link annotations", exc_info=True)
+            return pdf_bytes
 
     def _apply_pdf_view_preferences(self, pdf_bytes: bytes) -> bytes:
         """
@@ -591,3 +880,7 @@ class PDFService:
             except ValueError:
                 pass
         return (255, 255, 255)
+
+    @classmethod
+    def _is_pdf_link_href(cls, href: str) -> bool:
+        return href.lower().startswith(cls.PDF_LINK_SCHEMES)

@@ -1,7 +1,13 @@
-"""Unit tests for image URL normalization and embedding in the PDF service."""
-import pytest
+"""Unit tests for image URL normalization, embedding, and PDF links."""
+import asyncio
+import base64
+from io import BytesIO
 
-from app.services.pdf import normalize_image_sources, embed_remote_images
+import pytest
+from PIL import Image
+from pypdf import PdfReader
+
+from app.services.pdf import PDFService, normalize_image_sources, embed_remote_images
 
 
 class TestNormalizeImageSources:
@@ -94,3 +100,120 @@ class TestEmbedRemoteImages:
         embed_remote_images('<img src="https://x.test/a.png">')
         assert "HeadlessChrome" not in seen.get("User-Agent", "")
         assert seen.get("User-Agent", "").startswith("Mozilla/5.0")
+
+
+def _png_bytes(width=200, height=100):
+    image = Image.new("RGB", (width, height), "white")
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+class TestPdfLinks:
+    def test_browserless_function_response_preserves_link_metadata(self, monkeypatch):
+        import app.services.pdf as pdf_mod
+
+        image_bytes = _png_bytes()
+        encoded = base64.b64encode(image_bytes).decode("ascii")
+        captured = {}
+
+        class _FunctionResponse:
+            ok = True
+
+            def json(self):
+                return {
+                    "data": {
+                        "screenshot": encoded,
+                        "links": [
+                            {
+                                "href": "https://example.com",
+                                "x": 1,
+                                "y": 2,
+                                "width": 3,
+                                "height": 4,
+                            }
+                        ],
+                        "captureWidth": 200,
+                        "captureHeight": 100,
+                    }
+                }
+
+        def _post(url, json=None, timeout=None):
+            captured["url"] = url
+            captured["json"] = json
+            captured["timeout"] = timeout
+            return _FunctionResponse()
+
+        monkeypatch.setattr(pdf_mod.requests, "post", _post)
+
+        service = PDFService(browserless_token="test-token")
+        result = asyncio.run(service._render_via_browserless("<a href='https://example.com'>x</a>"))
+
+        assert captured["url"].endswith("/function?token=test-token")
+        assert captured["json"]["context"]["html"] == "<a href='https://example.com'>x</a>"
+        assert result["screenshot"] == image_bytes
+        assert result["links"][0]["href"] == "https://example.com"
+        assert result["capture_width"] == 200
+        assert result["capture_height"] == 100
+
+    def test_compose_pdf_adds_clickable_url_annotation(self):
+        service = PDFService()
+        pdf_bytes = service._compose_pdf(
+            _png_bytes(),
+            page_width_in=2,
+            page_height_in=1,
+            margin_in=0,
+            dpi=100,
+            manual_scale=1,
+            manual_scale_supplied=True,
+            allow_scale_up=True,
+            max_scale=2,
+            background_color=(255, 255, 255),
+            link_rects=[
+                {
+                    "href": "https://example.com/archive",
+                    "x": 10,
+                    "y": 20,
+                    "width": 50,
+                    "height": 10,
+                }
+            ],
+            capture_width=200,
+            capture_height=100,
+        )
+
+        page = PdfReader(BytesIO(pdf_bytes)).pages[0]
+        annotations = page["/Annots"]
+        link = annotations[0].get_object()
+
+        assert link["/Subtype"] == "/Link"
+        assert link["/A"]["/URI"] == "https://example.com/archive"
+
+    def test_compose_pdf_skips_unsafe_link_annotation_urls(self):
+        service = PDFService()
+        pdf_bytes = service._compose_pdf(
+            _png_bytes(),
+            page_width_in=2,
+            page_height_in=1,
+            margin_in=0,
+            dpi=100,
+            manual_scale=1,
+            manual_scale_supplied=True,
+            allow_scale_up=True,
+            max_scale=2,
+            background_color=(255, 255, 255),
+            link_rects=[
+                {
+                    "href": "javascript:alert(1)",
+                    "x": 10,
+                    "y": 20,
+                    "width": 50,
+                    "height": 10,
+                }
+            ],
+            capture_width=200,
+            capture_height=100,
+        )
+
+        page = PdfReader(BytesIO(pdf_bytes)).pages[0]
+        assert "/Annots" not in page
