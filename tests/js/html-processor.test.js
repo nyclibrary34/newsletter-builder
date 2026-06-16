@@ -17,6 +17,63 @@ function wrap(bodyHtml) {
   return `<!DOCTYPE html><html><body>${bodyHtml}</body></html>`;
 }
 
+function outputDoc(bodyHtml) {
+  return new JSDOM(processor.processHTML(wrap(bodyHtml))).window.document;
+}
+
+test('content image preserves explicit max-width instead of broad 100 percent rewrite', () => {
+  const doc = outputDoc(
+    '<table><tr><td align="center"><img src="https://www.nyc.gov/photo.jpg" alt="Newsletter image" width="600" style="display:block; width:100%; max-width:600px; margin:0 auto 8px;"></td></tr></table>'
+  );
+  const img = doc.querySelector('img');
+  const style = img.getAttribute('style') || '';
+
+  assert.equal(img.getAttribute('src'), 'https://www.nyc.gov/photo.jpg');
+  assert.equal(img.getAttribute('width'), '600');
+  assert.match(style, /max-width:\s*600px/i);
+  assert.doesNotMatch(style, /max-width:\s*100%/i);
+});
+
+test('feature image preserves 260px max-width and does not resize to full email width', () => {
+  const doc = outputDoc(
+    '<table><tr><td width="40%" align="center">' +
+    '<img src="https://www.nyc.gov/feature.jpg" alt="Feature image" width="260" style="display:block; width:100%; max-width:260px; margin:0 auto;">' +
+    '</td><td width="60%"><p>Paragraph below or beside image</p></td></tr></table>'
+  );
+  const img = doc.querySelector('img');
+  const paragraph = doc.querySelector('p');
+  const style = img.getAttribute('style') || '';
+
+  assert.equal(img.getAttribute('width'), '260');
+  assert.match(style, /max-width:\s*260px/i);
+  assert.equal(paragraph.getAttribute('data-gjs-type'), 'text');
+});
+
+test('social icon images keep inline-block display', () => {
+  const doc = outputDoc(
+    '<p><a href="https://www.facebook.com/nycrecords" style="display:inline-block !important">' +
+    '<img alt="Facebook" src="https://www1.nyc.gov/assets/home/images/agencies/social/fb-50x50.png" width="42" height="42" style="display:inline-block !important; height:auto;">' +
+    '</a></p>'
+  );
+  const link = doc.querySelector('a');
+  const img = doc.querySelector('img');
+  const linkStyle = link.getAttribute('style') || '';
+  const imgStyle = img.getAttribute('style') || '';
+
+  assert.match(linkStyle, /display:\s*inline-block/i);
+  assert.match(imgStyle, /display:\s*inline-block/i);
+  assert.doesNotMatch(imgStyle, /display:\s*block/i);
+});
+
+test('non-social image without pixel sizing does not receive arbitrary email width', () => {
+  const doc = outputDoc(
+    '<img src="https://www.nyc.gov/no-width.jpg" style="height:auto;">'
+  );
+  const img = doc.querySelector('img');
+
+  assert.notEqual(img.getAttribute('width'), '600');
+});
+
 test('font-family:inherit resolves to ancestor inline font', () => {
   const out = processor.processHTML(wrap(
     '<div style="font-family: Arial"><span style="font-family: inherit">text</span></div>'
